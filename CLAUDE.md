@@ -27,6 +27,10 @@ The design and its evidence live in the CEO's TypeScript original in `Reseach/ne
   `src/tools/`; raise `UserError` for fixable input, let `ApiError` propagate.
 - No internal SDK dependency: logging is copied in (`src/log.py`), so the repo installs from public PyPI.
 - Docstrings on every function. Update `CHANGELOG.md` with every change.
+- **Prices only in credits**, never in currency (a lint fails on `$<digit>` and "dollar").
+- **Skills in `plugin/skills/` are tuned like tool descriptions.** A skill may only name tools and parameters the
+  hosted server has (or the known local-only ones); `tests/test_skills.py` enforces it. Renaming a tool or a
+  parameter means updating the skills that use it. Run `claude plugin validate ./plugin` after manifest changes.
 
 ## Commands
 

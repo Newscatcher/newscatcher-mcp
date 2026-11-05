@@ -3,11 +3,28 @@
 ## [Unreleased]
 
 ### Added
+- Claude Code plugin in `plugin/` (53 skills, a `news-researcher` subagent) that connects to the hosted server with
+  the user's key (`userConfig`, kept in the OS keychain) sent as `x-api-key`; marketplace at the repo root, so users
+  install with `/plugin marketplace add Newscatcher/newscatcher-mcp` then `/plugin install newscatcher@newscatcher`.
+  Codex and Cursor manifests share the skills and `plugin/mcp.json`.
+- `get_research`: `exclude_rows` (row numbers to leave out after checking; the table and the counts line then cover
+  only the kept rows, row numbers kept) and `sort="importance"` (most important first, then newest). The critical
+  skills use both (company monitoring, cyber, event datasets).
+- Instructions: a window without an end ends today; this hosted server has no file tools, so tables are paged with
+  `get_research` and the full file comes from the NewsCatcher platform.
+- Tests: skill and plugin lint (`tests/test_skills.py`: frontmatter, size, wording, every tool and parameter a skill
+  names exists on the hosted server or is a known local-only one, manifests point at the hosted URL), and a lint
+  against dollar amounts in descriptions, schemas, instructions and skills.
 - PostHog settings aligned with agent-service: `POSTHOG_ENABLED` (default `true`; `false` turns analytics off even
   with a key), `POSTHOG_APP` (default `newscatcher-mcp`) and `POSTHOG_ENVIRONMENT` (default Vercel's
   `VERCEL_TARGET_ENV`, else `local`), sent as `app` / `environment` on every event.
 
 ### Changed
+- Prices only in credits: `start_research(dry_run=true)` no longer prints a dollar figure next to credits
+  ("4,500 credits", not "4,500 credits ($4.50)"). Rule from the CEO: never mention $, only credits.
+- Search results print the newsroom count as its own label, `39 newsrooms (story <id>)` (was `story <id> (39
+  newsrooms)`), so models copy the count from the right result; results without a story say `1 newsroom`.
+- The counts line reads "Counts over all N rows shown in this result".
 - `POSTHOG_HOST` is now a bare host (default `us.i.posthog.com`) with a separate `POSTHOG_PORT`, like agent-service.
 - Package folder renamed `newscatcher_mcp/` → `src/` (the repo already carries the name).
 - API base URLs split into host / port / endpoint env vars (`NEWSCATCHER_{NEWS,AGENT}_API_{URL,PORT,ENDPOINT}`), so

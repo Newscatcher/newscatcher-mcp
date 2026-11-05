@@ -40,6 +40,19 @@ end up in access logs). OAuth will replace this.
 - `?tools=news` (or `news,research`) exposes only those toolsets, to save context. Default: all.
 - `?client=cursor` tags usage in the upstream User-Agent.
 
+### Claude Code plugin (tools + 53 skills)
+
+```bash
+/plugin marketplace add Newscatcher/newscatcher-mcp
+/plugin install newscatcher@newscatcher
+```
+
+Claude Code asks for the NewsCatcher API key once and keeps it in the OS keychain; the plugin connects to
+`https://mcp.newscatcherapi.com/mcp` with it. The skills (`plugin/skills/`) cover briefings, adverse media, company
+monitoring, sales triggers, deal, funding and layoff trackers, share of voice, PR coverage, earnings, cyber incidents
+and more; each one tells the model which tools to call and how to present the result. They were tuned against an
+end-to-end eval (37 of the 39 critical-skill test prompts at 4+ of 5 with Claude Haiku 5.5).
+
 ## Tools
 
 | Toolset | Tool | What it does | Cost |
@@ -58,7 +71,11 @@ end up in access logs). OAuth will replace this.
 Also: two guide resources (`newscatcher://guides/query-syntax`, `newscatcher://guides/research-agent`) and three
 prompts (`news_briefing`, `company_watch`, `event_dataset`).
 
-Not in the hosted server: the local-file features of the original (`export_research`, `save_as`, `csv_path`).
+Not in the hosted server: the local-file features of the original (`export_research`, `save_as`, `csv_path`). The
+instructions tell models so; some skills mention them for local setups.
+
+`get_research` also takes `exclude_rows` (leave out rows after checking; counts cover the kept rows) and
+`sort` (`newest`, `oldest`, `importance`).
 
 ## Example
 

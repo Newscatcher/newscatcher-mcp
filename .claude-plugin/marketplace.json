@@ -1,0 +1,17 @@
+{
+  "name": "newscatcher",
+  "owner": {
+    "name": "NewsCatcher",
+    "url": "https://www.newscatcherapi.com"
+  },
+  "metadata": {
+    "description": "NewsCatcher news search and research agent for Claude Code: the hosted MCP server plus use-case skills."
+  },
+  "plugins": [
+    {
+      "name": "newscatcher",
+      "source": "./plugin",
+      "description": "News search, article counts, story coverage and the NewsCatcher research agent (event datasets, company news, monitors), with 53 use-case skills."
+    }
+  ]
+}
