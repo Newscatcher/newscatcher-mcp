@@ -1,0 +1,10 @@
+/Reseach/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.idea/
+.vercel/
+.env
+.env.*
+!.env.example
