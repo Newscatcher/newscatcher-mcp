@@ -2,7 +2,7 @@
 
 MCP server for the NewsCatcher **News API** (search, exact counts, stories) and the **research agent** (verified
 event datasets, company news, company lists, monitors). Hosted on Vercel as stateless Streamable HTTP; every user
-brings their own NewsCatcher Platform API key.
+brings their own NewsCatcher Platform API key. 
 
 Python port of the TypeScript server designed in `Reseach/newscatcher-mcp` (kept out of git). Tool names,
 descriptions, defaults and output wording are kept identical to it, because they were tuned against model evals.
