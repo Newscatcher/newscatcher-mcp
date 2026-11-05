@@ -4,7 +4,8 @@
 - ``python server.py`` runs over stdio for local development (key from ``NEWSCATCHER_API_KEY``).
 - ``python server.py --http`` runs the HTTP app locally with uvicorn on ``PORT`` (default 8000).
 
-``mcp`` and ``app`` must stay module-level with these names.
+``mcp`` and ``app`` must stay module-level with these names, and ``app`` a plain ``app = ...`` assignment: Vercel's
+build finds the entrypoint by reading the source, and does not see a tuple assignment (``mcp, app = ...``).
 """
 
 import os
@@ -18,7 +19,8 @@ from src.server import create_app
 logger = setup_logging(__name__)
 
 config = load_config()
-mcp, app = create_app(config)
+mcp, http_app = create_app(config)
+app = http_app
 
 logger.info(
     "NewsCatcher MCP server initialized",

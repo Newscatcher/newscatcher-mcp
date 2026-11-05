@@ -15,6 +15,8 @@
 - Configuration lives in Vercel environment variables; no Doppler project needed.
 
 ### Fixed
+- Vercel build failed with `PYTHON_ENTRYPOINT_NOT_FOUND`: `server.py` set `app` in a tuple assignment
+  (`mcp, app = create_app(...)`), which Vercel's entrypoint detection does not see. `app` is now a plain assignment.
 - `scripts/smoke_test.py` crashed silently on Windows consoles (non-UTF-8 code page).
 
 ## [0.1.0] - 2026-11-05
