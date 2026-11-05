@@ -768,7 +768,7 @@ def render_search(d: dict[str, Any], query: str) -> str:
                 when(r.get("published_at")),
                 "/".join(x for x in [r.get("country"), r.get("language")] if x),
                 r.get("content_type") if r.get("content_type") not in (None, "", "news_report", "news") else "",
-                f"story {story['id']} ({plural(int(story.get('newsrooms') or 1), 'newsroom')})" if story.get("id") else "",
+                f"{plural(int(story.get('newsrooms') or 1), 'newsroom')} (story {story['id']})" if story.get("id") else "1 newsroom",
             ]
             if x
         )

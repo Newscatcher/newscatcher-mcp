@@ -25,8 +25,8 @@ ETA = {
     "companies": "company runs take ~2–4 minutes per 6 companies",
 }
 
-# PAYG list prices in credits (1 credit = $0.001), approved Oct 15 2026; company monitors raised to $3 a company a
-# month on Nov 2. Used only for dry-run estimates. Enterprise plans can differ. Change them here if pricing changes.
+# PAYG list prices in credits, approved Oct 15 2026; company monitors raised to 3,000 credits a company a month on
+# Nov 2. Used only for dry-run estimates. Enterprise plans can differ. Change them here if pricing changes.
 PRICES: dict[str, Any] = {
     "run": {"fast": 1000, "standard": 3000, "max": 6000},
     # Each 50 rows delivered past the first 50.
@@ -37,7 +37,7 @@ PRICES: dict[str, Any] = {
 
 
 def credits(n: int) -> str:
-    """``"6,000 credits ($6.00)"``.
+    """``"6,000 credits"``. Prices are always given in credits, never in currency.
 
     Args:
         n (int): Credits.
@@ -45,7 +45,7 @@ def credits(n: int) -> str:
     Returns:
         str: The phrase.
     """
-    return f"{num(n)} credits (${n / 1000:.2f})"
+    return f"{num(n)} credits"
 
 
 # Words that pin a time window: dates, months, years, relative periods.
@@ -416,12 +416,22 @@ def register_research_tools(mcp: FastMCP, config: Config) -> None:
         ] = 30,
         rows_offset: Annotated[int, Field(ge=0, description="First row to show (for paging through a big table).")] = 0,
         rows_limit: Annotated[int, Field(ge=0, le=200, description="Rows to show (default 25, max 200). Page with rows_offset.")] = 25,
-        sort: Annotated[
-            Literal["original", "newest", "oldest"],
+        exclude_rows: Annotated[
+            items(Annotated[int, Field(ge=1)], max_length=500) | None,  # type: ignore[operator]
+            JsonText,
             Field(
                 description=(
-                    "Row order: original (as the run returned them), newest or oldest first by the row's date column. "
-                    "Row numbers (#) stay the run's own."
+                    "Row numbers (#) to leave out after checking (duplicates, out of scope): the table and the counts "
+                    "line then cover only the kept rows."
+                )
+            ),
+        ] = None,
+        sort: Annotated[
+            Literal["original", "newest", "oldest", "importance"],
+            Field(
+                description=(
+                    "Row order: original (as the run returned them), newest or oldest first by the row's date column, or "
+                    "importance (most important first, then newest). Row numbers (#) stay the run's own."
                 )
             ),
         ] = "original",
@@ -445,7 +455,7 @@ def register_research_tools(mcp: FastMCP, config: Config) -> None:
                 for r in runs
             )
         ref = {"batch_id": batch_id} if batch_id else {"run_id": run_id}
-        detail = sort_rows(await wait_for_run(call, ref, call.wait_budget(wait_seconds)), sort)
+        detail = sort_rows(drop_rows(await wait_for_run(call, ref, call.wait_budget(wait_seconds)), exclude_rows), sort)
         if format == "json":
             rows = [
                 ({"#": r["__n"], **{k: v for k, v in r.items() if k != "__n"}} if r.get("__n") else r)
@@ -606,7 +616,9 @@ def render_run(d: dict[str, Any], offset: int, limit: int) -> str:
         else:
             columns = all_cols
         page = rows[offset : offset + limit]
-        lines.append(f"{plural(len(rows), 'row')} · columns: {', '.join(all_cols)}")
+        excluded = d.get("excluded") or []
+        kept = f" kept (left out #{', #'.join(str(n) for n in excluded)})" if excluded else ""
+        lines.append(f"{plural(len(rows), 'row')}{kept} · columns: {', '.join(all_cols)}")
         summary = summarize_rows(all_cols, rows)
         if summary:
             lines.append(summary)
@@ -637,12 +649,47 @@ def render_run(d: dict[str, Any], offset: int, limit: int) -> str:
     return "\n".join(lines)
 
 
-def sort_rows(d: dict[str, Any], order: str) -> dict[str, Any]:
-    """Order rows by their date column (ISO dates sort as text); rows without a date go last.
+def drop_rows(d: dict[str, Any], exclude: list[int] | None) -> dict[str, Any]:
+    """Leave out rows by their run row number (#), keeping each kept row's own number; note what was dropped.
 
     Args:
         d (dict[str, Any]): Run detail.
-        order (str): original, newest or oldest.
+        exclude (list[int] | None): Row numbers to leave out.
+
+    Returns:
+        dict[str, Any]: The detail with the kept rows and ``excluded`` (the sorted row numbers left out).
+    """
+    rows = d.get("rows") if isinstance(d, dict) else None
+    if not exclude or not isinstance(rows, list):
+        return d
+    drop = set(exclude)
+    numbered = [{**r, "__n": r.get("__n") or i + 1} for i, r in enumerate(rows)]
+    return {**d, "rows": [r for r in numbered if r["__n"] not in drop], "excluded": sorted(drop)}
+
+
+def _importance(v: Any) -> float:
+    """Importance as a number: 1–5 as given, or low/medium/high.
+
+    Args:
+        v (Any): The cell.
+
+    Returns:
+        float: The score (0 when missing).
+    """
+    if v is None or v == "":
+        return 0.0
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return {"high": 3.0, "medium": 2.0, "low": 1.0}.get(str(v).lower(), 0.0)
+
+
+def sort_rows(d: dict[str, Any], order: str) -> dict[str, Any]:
+    """Order rows by their date column (ISO dates sort as text), or by importance then date; undated rows go last.
+
+    Args:
+        d (dict[str, Any]): Run detail.
+        order (str): original, newest, oldest or importance.
 
     Returns:
         dict[str, Any]: The detail with sorted rows (each keeps its original number in ``__n``).
@@ -652,12 +699,23 @@ def sort_rows(d: dict[str, Any], order: str) -> dict[str, Any]:
         return d
     cols = d.get("columns") or list(rows[0].keys())
     date_col = next((c for c in cols if re.search("date", c, re.IGNORECASE)), None)
-    if not date_col:
+    imp_col = next((c for c in cols if c.lower() == "importance"), None)
+    if (order == "importance" and not imp_col) or (order != "importance" and not date_col):
         return d
     numbered = [{**r, "__n": r.get("__n") or i + 1} for i, r in enumerate(rows)]
-    dated = [r for r in numbered if str(r.get(date_col) or "")]
-    undated = [r for r in numbered if not str(r.get(date_col) or "")]
-    dated.sort(key=lambda r: str(r.get(date_col)), reverse=order == "newest")
+
+    def date(r: dict[str, Any]) -> str:
+        """The row's date as text ("" when missing)."""
+        return str(r.get(date_col) or "") if date_col else ""
+
+    dated = [r for r in numbered if date(r)]
+    undated = [r for r in numbered if not date(r)]
+    if order == "importance":
+        # most important first; within one importance, newest first and undated last
+        dated.sort(key=date, reverse=True)
+        ordered = sorted(dated + undated, key=lambda r: -_importance(r.get(imp_col)))
+        return {**d, "rows": ordered}
+    dated.sort(key=date, reverse=order != "oldest")
     return {**d, "rows": dated + undated}
 
 
@@ -780,7 +838,7 @@ def summarize_rows(columns: list[str], rows: list[dict[str, Any]]) -> str:
                 + "; ".join(f"{(c + ' ') if c else ''}{_fmt_amount(e['sum'])} over {plural(int(e['n']), 'row')}" for c, e in sums.items())
                 + (f"; {undisclosed} undisclosed or not numeric" if undisclosed else "")
             )
-    return f"Counts over all {len(rows)} rows (use these for totals; no need to page): {' · '.join(parts)}" if parts else ""
+    return f"Counts over all {len(rows)} rows shown in this result (use these for totals; no need to page): {' · '.join(parts)}" if parts else ""
 
 
 def _scalar(v: Any) -> str:

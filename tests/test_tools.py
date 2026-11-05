@@ -18,7 +18,7 @@ from src.server import INSTRUCTIONS, build_server
 from src.tools.research import MaxRows, query_tips
 
 BANNED = [
-    r"every page read", r"reads? (the|every) articles?", r"whole article", r"full[- ]text", r"full content",
+    r"\$\s?\d", r"\bdollars?\b", r"every page read", r"reads? (the|every) articles?", r"whole article", r"full[- ]text", r"full content",
     r"article text", r"\bcontent field\b", r"robots", r"\bv4\b", r"instead of (your )?built-in",
 ]
 TOOLS = [
@@ -409,17 +409,19 @@ async def test_dry_run_starts_nothing_and_shows_cost_balance_and_tips(setup):
     h = setup(lambda c: {"json": {"credits_balance": 2500}} if "/subscription" in c.url else {"status": 500})
     text, _ = await h.call("start_research", {"query": "news articles about tech layoffs", "mode": "standard", "max_rows": 150, "dry_run": True})
     assert all(c.method == "GET" for c in h.calls)
-    for s in ("nothing was started or charged", "Standard runs take 10–30 minutes", "at most 6,000 credits ($6.00)",
+    for s in ("nothing was started or charged", "Standard runs take 10–30 minutes", "at most 6,000 credits.",
               "Balance: 2,500 credits (not enough", "No time window", "Describe the events, not the coverage"):
         assert s in text
+    assert "$" not in text
 
 
 async def test_dry_run_counts_saved_list_and_prices_the_monitor(setup):
     h = setup(lambda c: {"json": {"list_id": "l1", "count": 60}} if "/companies/lists/" in c.url else {"json": {"credits_balance": 1_000_000}})
     text, _ = await h.call("start_research", {"company_list_id": "l1", "keep_updated": True, "dry_run": True})
-    for s in ("company news for 60 companies", "run as a batch", "30,000 credits ($30.00) for 60 companies",
-              "180,000 credits ($180.00) a month", "Query check: no issues found"):
+    for s in ("company news for 60 companies", "run as a batch", "30,000 credits for 60 companies",
+              "180,000 credits a month", "Query check: no issues found"):
         assert s in text
+    assert "$" not in text
 
 
 def test_query_tips():
@@ -435,6 +437,34 @@ async def test_get_research_numbers_rows(setup):
     text, _ = await h.call("get_research", {"run_id": "r1", "wait_seconds": 0})
     assert "| # | company | date |" in text
     assert "| 2 | A | 2026-10-01 |" in text
+
+
+async def test_get_research_leaves_out_rows_and_recounts_by_importance(setup):
+    detail = {"run_id": "r1", "status": "succeeded", "kind": "companies", "columns": ["company", "story_type", "importance", "date"],
+              "rows": [{"company": "A", "story_type": "funding", "importance": 2, "date": "2026-10-01"},
+                       {"company": "A", "story_type": "funding", "importance": 4, "date": "2026-10-03"},
+                       {"company": "B", "story_type": "layoffs", "importance": 3, "date": "2026-10-02"},
+                       {"company": "B", "story_type": "funding", "importance": 3, "date": "2026-10-05"}]}
+    h = setup(lambda c: {"json": detail})
+    text, _ = await h.call("get_research", {"run_id": "r1", "wait_seconds": 0, "exclude_rows": [1], "sort": "importance"})
+    assert "3 rows kept (left out #1)" in text
+    assert "Counts over all 3 rows shown" in text
+    assert "story_type: funding 2, layoffs 1" in text
+    order = re.findall(r"^\| (\d) \|", text, re.M)
+    assert order == ["2", "4", "3"]  # importance 4; then importance 3, newer first
+
+
+async def test_get_research_takes_exclude_rows_as_json_text(setup):
+    detail = {"run_id": "r1", "status": "succeeded", "kind": "events", "columns": ["company", "date"],
+              "rows": [{"company": "A", "date": "2026-10-01"}, {"company": "B", "date": "2026-10-02"}]}
+    h = setup(lambda c: {"json": detail})
+    text, _ = await h.call("get_research", {"run_id": "r1", "wait_seconds": 0, "exclude_rows": "[2]", "sort": "newest"})
+    assert "1 row kept (left out #2)" in text
+
+
+async def test_instructions_say_open_windows_end_today(setup):
+    from src.server import INSTRUCTIONS
+    assert "a window without an end ends today" in INSTRUCTIONS
 
 
 async def test_get_story_one_per_newsroom_and_earliest(setup):

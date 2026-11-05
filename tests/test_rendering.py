@@ -46,7 +46,7 @@ def test_render_search_story_ids_newsrooms_translations():
         "Airbus",
     )
     assert "[EN: Airbus shares rise]" in t
-    assert "story s1 (39 newsrooms)" in t
+    assert "39 newsrooms (story s1)" in t
     assert "2026-10-29 10:47 UTC" in t
 
 

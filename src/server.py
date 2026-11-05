@@ -35,9 +35,11 @@ Pick the tool by the question:
 - Reusable sets of companies: save_company_list, get_company_list, edit_company_list.
 - Credits, limits, plan: get_account.
 
-Dates: "this week" = Monday to now, "last week" = the previous Monday–Sunday, "last month" = the previous calendar month (UTC); say the exact dates you used.
+Dates: "this week" = Monday to now, "last week" = the previous Monday–Sunday, "last month" = the previous calendar month (UTC); a window without an end ends today. Say the exact dates you used.
 
-Results give headlines, one-line summaries, sources, dates and links; cite the links. To read an article itself, open its URL with a web fetch tool. Research runs and monitors cost credits and take minutes: confirm big jobs (standard/max, many companies, hourly schedules) with the user first; start_research(dry_run=true) shows the time and list-price cost for free. Ids (story, run, list, monitor) come from earlier results; never invent them."""
+Results give headlines, one-line summaries, sources, dates and links; cite the links. To read an article itself, open its URL with a web fetch tool. Research runs and monitors cost credits and take minutes: confirm big jobs (standard/max, many companies, hourly schedules) with the user first; start_research(dry_run=true) shows the time and list-price cost for free. Ids (story, run, list, monitor) come from earlier results; never invent them.
+
+This hosted server has no file tools: export_research, save_as and csv_path (which some skills mention) are not available. Give tables in the answer, page longer ones with get_research(rows_offset=…, rows_limit up to 200), and say the full file can be downloaded from the run in the NewsCatcher platform."""
 
 
 def _toolset(tool: Tool) -> str | None:
