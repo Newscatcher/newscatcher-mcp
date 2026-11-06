@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Security
+- CI workflow runs with a read-only GitHub token (`permissions: contents: read`).
+
 ### Added
 - MIT `LICENSE` (the plugin manifest already declared MIT); `license` in `pyproject.toml`, License section in the README.
 
