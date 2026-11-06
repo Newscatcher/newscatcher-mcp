@@ -160,3 +160,7 @@ src/
   tools/                       news, research, lists, monitors (+ common registration, shared params)
 tests/                         Tools, rendering, HTTP/auth, analytics, skill lint
 ```
+
+## License
+
+[MIT](LICENSE)

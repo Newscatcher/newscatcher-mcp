@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Added
+- MIT `LICENSE` (the plugin manifest already declared MIT); `license` in `pyproject.toml`, License section in the README.
+
 ## [0.1.0] - 2026-11-06
 
 First public release.
