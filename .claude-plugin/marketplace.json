@@ -11,7 +11,7 @@
     {
       "name": "newscatcher",
       "source": "./plugin",
-      "description": "News search, article counts, story coverage and the NewsCatcher research agent (event datasets, company news, monitors), with 53 use-case skills."
+      "description": "News search, article counts, story coverage and the NewsCatcher research agent  (event datasets, company news, monitors), with 53 use-case skills."
     }
   ]
 }
