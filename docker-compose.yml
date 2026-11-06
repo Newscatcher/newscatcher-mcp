@@ -1,0 +1,9 @@
+services:
+  newscatcher-mcp:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      LOG_LEVEL: INFO
+      # Callers send their own key in the x-api-key header; the server holds no key.
+      NEWSCATCHER_MAX_CALL_SECONDS: "240"

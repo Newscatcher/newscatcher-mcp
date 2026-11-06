@@ -1,0 +1,38 @@
+{
+  "name": "newscatcher",
+  "version": "0.2.0",
+  "description": "NewsCatcher for AI agents: search the news in every language, count and list every matching article, and run the NewsCatcher research agent to build verified event datasets, watch companies and keep them updated with monitors. Includes skills for briefings, company research, adverse media, sales triggers, event trackers, share of voice and more.",
+  "author": {
+    "name": "NewsCatcher",
+    "url": "https://www.newscatcherapi.com"
+  },
+  "homepage": "https://www.newscatcherapi.com/docs",
+  "license": "MIT",
+  "keywords": [
+    "news",
+    "news-api",
+    "search",
+    "research",
+    "monitoring",
+    "company-news",
+    "adverse-media",
+    "mcp"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./mcp.json",
+  "interface": {
+    "displayName": "NewsCatcher",
+    "shortDescription": "Search the news and build event datasets with the NewsCatcher research agent",
+    "longDescription": "News search in every language with stories, exact article counts and listings over 12 months, and the NewsCatcher research agent for event datasets, company news and monitors. Connects to the hosted NewsCatcher MCP server (https://mcp.newscatcherapi.com/mcp) with your NewsCatcher API key in NEWSCATCHER_API_KEY (https://platform.newscatcherapi.com).",
+    "developerName": "NewsCatcher",
+    "category": "Productivity",
+    "capabilities": [
+      "Read"
+    ],
+    "websiteURL": "https://www.newscatcherapi.com",
+    "defaultPrompt": [
+      "What were the biggest stories about Nvidia this week? Cite sources.",
+      "Build a table of layoffs announced by US tech companies in the last 30 days."
+    ]
+  }
+}

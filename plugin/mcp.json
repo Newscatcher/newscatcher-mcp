@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "newscatcher": {
+      "type": "http",
+      "url": "https://mcp.newscatcherapi.com/mcp?client=agent-plugin",
+      "headers": {
+        "x-api-key": "${NEWSCATCHER_API_KEY}"
+      }
+    }
+  }
+}

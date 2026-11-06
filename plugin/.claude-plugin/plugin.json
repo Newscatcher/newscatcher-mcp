@@ -1,0 +1,40 @@
+{
+  "name": "newscatcher",
+  "version": "0.2.0",
+  "description": "NewsCatcher for Claude Code: search the news in every language, count and list every matching article, and run the NewsCatcher research agent to build verified event datasets, watch companies and keep them updated with monitors. Includes skills for briefings, company research, adverse media, sales triggers, deal and layoff trackers, share of voice and more.",
+  "author": {
+    "name": "NewsCatcher",
+    "url": "https://www.newscatcherapi.com"
+  },
+  "homepage": "https://www.newscatcherapi.com/docs",
+  "repository": "https://github.com/Newscatcher/newscatcher-mcp",
+  "license": "MIT",
+  "keywords": [
+    "news",
+    "news-api",
+    "search",
+    "research",
+    "monitoring",
+    "company-news",
+    "adverse-media",
+    "mcp"
+  ],
+  "userConfig": {
+    "newscatcher_api_key": {
+      "type": "string",
+      "title": "NewsCatcher API key",
+      "description": "Your NewsCatcher API key (create one at https://platform.newscatcherapi.com).",
+      "sensitive": true,
+      "required": true
+    }
+  },
+  "mcpServers": {
+    "newscatcher": {
+      "type": "http",
+      "url": "https://mcp.newscatcherapi.com/mcp?client=claude-code-plugin",
+      "headers": {
+        "x-api-key": "${user_config.newscatcher_api_key}"
+      }
+    }
+  }
+}

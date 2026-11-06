@@ -1,0 +1,20 @@
+[project]
+name = "newscatcher-mcp"
+version = "0.1.0"
+description = "NewsCatcher MCP server: news search, article counts, stories and the NewsCatcher research agent."
+readme = "README.md"
+requires-python = ">=3.12"
+# Keep in sync with requirements.txt (Vercel installs from either).
+dependencies = [
+    "fastmcp==4.1.3",
+    "mcp==2.2.0",
+    "httpx==0.28.1",
+    "posthog==7.60.2",
+]
+
+[project.optional-dependencies]
+test = ["pytest==9.0.3", "pytest-asyncio==1.4.0", "respx==0.23.1"]
+
+[tool.setuptools]
+packages = ["src", "src.tools"]
+py-modules = ["server"]
