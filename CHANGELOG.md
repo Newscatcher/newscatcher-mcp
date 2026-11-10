@@ -6,6 +6,7 @@
 - CI workflow runs with a read-only GitHub token (`permissions: contents: read`).
 
 ### Added
+- Dev environment: CI runs on pushes and pull requests to `dev`; the README documents the `dev` Vercel environment.
 - MIT `LICENSE` (the plugin manifest already declared MIT); `license` in `pyproject.toml`, License section in the README.
 
 ## [0.1.0] - 2026-11-06

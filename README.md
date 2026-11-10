@@ -123,9 +123,14 @@ Set the variables in **Vercel → Project → Settings → Environment Variables
 | Vercel environment | API it talks to | What to set |
 |---|---|---|
 | Production | PROD | nothing for the APIs (defaults), PostHog values if wanted |
-| Preview (branches / PRs) | DEV | `NEWSCATCHER_NEWS_API_URL/PORT/ENDPOINT` and `NEWSCATCHER_AGENT_API_URL/PORT/ENDPOINT` → DEV hosts |
+| Dev (custom environment, `dev` branch, own domain) | DEV | `NEWSCATCHER_NEWS_API_URL/PORT/ENDPOINT` and `NEWSCATCHER_AGENT_API_URL/PORT/ENDPOINT` → DEV hosts; `POSTHOG_ENABLED=false` or the PostHog values |
+| Preview (other branches / PRs) | DEV | `NEWSCATCHER_NEWS_API_URL/PORT/ENDPOINT` and `NEWSCATCHER_AGENT_API_URL/PORT/ENDPOINT` → DEV hosts |
 
 Never set `NEWSCATCHER_API_KEY` on Vercel: users bring their own keys.
+
+Without the API host variables an environment talks to the PROD APIs (the defaults). MCP clients cannot pass
+Vercel Authentication, so keep Deployment Protection off for any domain clients connect to. Analytics events carry
+the Vercel environment name (e.g. `dev`) unless `POSTHOG_ENVIRONMENT` is set.
 
 ## Run locally
 

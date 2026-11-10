@@ -2,9 +2,9 @@ name: Tests
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, dev]
   push:
-    branches: [main]
+    branches: [main, dev]
 
 # The tests only read the code; the GitHub token gets nothing more.
 permissions:
