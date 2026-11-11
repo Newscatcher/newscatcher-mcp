@@ -6,6 +6,9 @@
 - CI workflow runs with a read-only GitHub token (`permissions: contents: read`).
 
 ### Added
+- Cursor Marketplace listing for the plugin: `.cursor-plugin/marketplace.json` at the repo root, and in the Cursor
+  manifest a `NEWSCATCHER_API_KEY` variable (the placeholder `plugin/mcp.json` already uses), `logo` and
+  `repository`. New `plugin/assets/logo.png` and `plugin/README.md` (setup for Cursor, Claude Code and Codex).
 - MIT `LICENSE` (the plugin manifest already declared MIT); `license` in `pyproject.toml`, License section in the README.
 
 ## [0.1.0] - 2026-11-06

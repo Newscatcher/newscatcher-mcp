@@ -8,6 +8,7 @@
     "url": "https://www.newscatcherapi.com"
   },
   "homepage": "https://www.newscatcherapi.com/docs",
+  "repository": "https://github.com/Newscatcher/newscatcher-mcp",
   "license": "MIT",
   "keywords": [
     "news",
@@ -17,5 +18,19 @@
     "monitoring",
     "mcp"
   ],
-  "skills": "./skills/"
+  "logo": "assets/logo.png",
+  "skills": "./skills/",
+  "variables": {
+    "type": "object",
+    "properties": {
+      "NEWSCATCHER_API_KEY": {
+        "type": "string",
+        "title": "NewsCatcher API key",
+        "description": "Your NewsCatcher API key. Create one at https://platform.newscatcherapi.com"
+      }
+    },
+    "required": [
+      "NEWSCATCHER_API_KEY"
+    ]
+  }
 }

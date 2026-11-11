@@ -1,0 +1,18 @@
+{
+  "name": "newscatcher",
+  "owner": {
+    "name": "NewsCatcher",
+    "email": "support@newscatcherapi.com"
+  },
+  "metadata": {
+    "description": "NewsCatcher news search and research agent for Cursor: the hosted MCP server plus use-case skills.",
+    "version": "0.2.0"
+  },
+  "plugins": [
+    {
+      "name": "newscatcher",
+      "source": "./plugin",
+      "description": "News search, article counts, story coverage and the NewsCatcher research agent (event datasets, company news, monitors), with 53 use-case skills."
+    }
+  ]
+}
