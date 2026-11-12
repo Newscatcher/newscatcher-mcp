@@ -19,6 +19,10 @@
   token.
 - A token the platform API rejects is logged with the API's reason and whether the token was issued to a connected
   app or had expired (never the token).
+- Clients are steered off the `openid` scope: the 401 challenge and the protected-resource document name
+  `email profile offline_access`, and the served authorization-server metadata drops `openid`. An auth project that
+  signs with a shared secret (HS256) cannot issue the ID token `openid` implies, so the token request failed after
+  approval.
 - Cursor Marketplace listing for the plugin: `.cursor-plugin/marketplace.json` at the repo root, and in the Cursor
   manifest a `NEWSCATCHER_API_KEY` variable (the placeholder `plugin/mcp.json` already uses), `logo` and
   `repository`. New `plugin/assets/logo.png` and `plugin/README.md` (setup for Cursor, Claude Code and Codex).

@@ -108,6 +108,7 @@ def test_no_credentials_gets_401_naming_where_to_sign_in(signin):
     challenge = r.headers["www-authenticate"]
     assert challenge.startswith("Bearer ")
     assert f'resource_metadata="{PUBLIC}/.well-known/oauth-protected-resource/mcp"' in challenge
+    assert 'scope="email profile offline_access"' in challenge
 
 
 def test_without_sign_in_the_challenge_has_no_metadata(http):
@@ -236,6 +237,7 @@ def test_jwt_shape():
 def test_protected_resource_names_this_server(signin, path):
     doc = signin.get(path).json()
     assert doc["resource"] == f"{PUBLIC}/mcp" and doc["authorization_servers"] == [PUBLIC]
+    assert "openid" not in doc["scopes_supported"] and "offline_access" in doc["scopes_supported"]
 
 
 @pytest.mark.parametrize("path", ["/.well-known/oauth-authorization-server", "/.well-known/openid-configuration"])
@@ -243,11 +245,14 @@ def test_authorization_server_metadata_points_registration_here(signin, respx_mo
     respx.get(f"{SUPABASE}/auth/v1/.well-known/oauth-authorization-server").respond(
         200,
         json={"issuer": f"{SUPABASE}/auth/v1", "authorization_endpoint": f"{SUPABASE}/auth/v1/oauth/authorize",
-              "token_endpoint": f"{SUPABASE}/auth/v1/oauth/token", "registration_endpoint": f"{SUPABASE}/auth/v1/oauth/clients/register"},
+              "token_endpoint": f"{SUPABASE}/auth/v1/oauth/token", "registration_endpoint": f"{SUPABASE}/auth/v1/oauth/clients/register",
+              "scopes_supported": ["openid", "profile", "email", "phone", "offline_access"]},
     )
     doc = signin.get(path).json()
     assert doc["issuer"] == PUBLIC and doc["registration_endpoint"] == f"{PUBLIC}/oauth/register"
     assert doc["authorization_endpoint"].startswith(SUPABASE) and doc["token_endpoint"].startswith(SUPABASE)
+    # No `openid`: an HS256 auth project cannot sign the ID token it implies, and the token request fails.
+    assert "openid" not in doc["scopes_supported"]
 
 
 def test_metadata_outage_is_a_502(signin, respx_mock):

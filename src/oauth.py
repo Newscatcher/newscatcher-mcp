@@ -50,6 +50,8 @@ MAX_CACHED_KEYS = 1024
 MAX_REGISTRATION_BYTES = 65_536
 GATEWAY_TIMEOUT_S = 15.0
 DEFAULT_KEY_NAME = "default api key"
+# Scopes clients should request: no `openid` (see _authorization_server_metadata); `offline_access` for refresh tokens.
+SCOPES = ("email", "profile", "offline_access")
 PERSONAL_WORKSPACE = "personal"
 
 _keys: dict[str, tuple[str, float]] = {}
@@ -136,6 +138,8 @@ def www_authenticate(oauth: OAuthConfig | None, error: str | None = None) -> byt
         parts.append(f'error="{error}"')
     if oauth is not None:
         parts.append(f'resource_metadata="{resource_metadata_url(oauth)}"')
+        # The first place an MCP client looks for which scopes to request.
+        parts.append(f'scope="{" ".join(SCOPES)}"')
     return ", ".join(parts).encode()
 
 
@@ -327,6 +331,9 @@ async def _authorization_server_metadata(oauth: OAuthConfig) -> dict[str, Any]:
     # RFC 8414: a document served from here names here as its issuer.
     doc["issuer"] = oauth.public_url
     doc["registration_endpoint"] = f"{oauth.public_url}{REGISTER_PATH}"
+    # Only the access token is used. Advertising `openid` makes clients ask for an ID token too, which an auth
+    # project signing with a shared secret (HS256) cannot issue: the token request then fails after approval.
+    doc["scopes_supported"] = list(SCOPES)
     _metadata = (doc, time.monotonic() + METADATA_TTL_S)
     return dict(doc)
 
@@ -353,6 +360,8 @@ def register_oauth_routes(mcp: FastMCP, oauth: OAuthConfig) -> None:
                 "resource": f"{oauth.public_url}{MCP_PATH}",
                 "authorization_servers": [oauth.public_url],
                 "bearer_methods_supported": ["header"],
+                # MCP clients request the scopes listed here, so this keeps them off `openid`.
+                "scopes_supported": list(SCOPES),
                 "resource_name": "NewsCatcher",
                 "resource_documentation": "https://www.newscatcherapi.com",
             }
