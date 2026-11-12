@@ -8,7 +8,11 @@ Tool names, descriptions, defaults and output wording were tuned against model e
 
 ## Connect
 
-Get an API key at [platform.newscatcherapi.com](https://platform.newscatcherapi.com).
+**Sign in with your NewsCatcher account** (deployments with sign-in on): add `https://<deployment>/mcp` as a connector
+in Claude, ChatGPT or Cursor and press Connect. You sign in to the NewsCatcher platform, approve the app, and the
+server uses your workspace's Default API Key. No key to copy.
+
+**Or bring an API key.** Get one at [platform.newscatcherapi.com](https://platform.newscatcherapi.com).
 
 **Claude Code**
 
@@ -32,7 +36,7 @@ claude mcp add --transport http newscatcher https://<deployment>/mcp --header "x
 
 `Authorization: Bearer YOUR_KEY` works as well. Clients that cannot send headers (claude.ai custom connectors) need
 `?apiKey=YOUR_KEY` on the URL, which is off unless the deployment sets `NEWSCATCHER_ALLOW_KEY_IN_URL=1` (keys in URLs
-end up in access logs). OAuth will replace this.
+end up in access logs). Signing in avoids both.
 
 **Options on the URL**
 
@@ -113,6 +117,19 @@ curl -X POST https://<deployment>/mcp \
 URLs are split into host / port / endpoint; the scheme is always https and defaults point at the
 PROD APIs. The only secrets are the two optional PostHog values.
 
+**Sign-in with a platform account** (OAuth 2.1; all of these or none, otherwise the server logs why and runs with API
+keys only):
+
+| Variable | Default | What |
+|---|---|---|
+| `NEWSCATCHER_OAUTH` | off | `1` turns sign-in on. |
+| `NEWSCATCHER_PUBLIC_URL` | – | This deployment's own origin, e.g. `https://mcp.example.com` (no path; a trailing `/` or `/mcp` is dropped). Goes verbatim into the discovery documents, so set it **per Vercel environment**: preview and production each name themselves. |
+| `NEWSCATCHER_SUPABASE_URL` | – | **Host** of the auth project users sign in to the platform with (`<ref>.supabase.co`). No default on purpose. |
+| `NEWSCATCHER_PLATFORM_API_URL` / `_PORT` / `_ENDPOINT` | `platform-api.newscatcherapi.com` | Platform API that turns a signed-in user into their workspace key. |
+
+The auth project needs its OAuth 2.1 server and dynamic client registration enabled, with the authorization (consent)
+path pointing at the platform app. How it works: `src/oauth.py`.
+
 ## Deploy (Vercel)
 
 Vercel's Python runtime serves the module-level `app` in `server.py`; `vercel.json` gives the function 300 s.
@@ -152,13 +169,14 @@ server.py                      Entrypoint: module-level `mcp` and `app` (Vercel)
 src/
   server.py                    build_server / create_app, instructions, toolset + input-error middleware
   auth.py                      Key per request, 401 middleware, ?tools= / ?client=
+  oauth.py                     Sign-in: discovery, client registration, platform token → workspace key
   client.py                    HTTP client: retries, pacing, no retry of paid writes, error hints
   config.py, log.py            Settings; structured JSON logging
   formatting.py, lenient.py    Compact text output; lenient list/object input
   analytics.py                 Optional PostHog
   guides.py                    Guide resources and prompts
   tools/                       news, research, lists, monitors (+ common registration, shared params)
-tests/                         Tools, rendering, HTTP/auth, analytics, skill lint
+tests/                         Tools, rendering, HTTP/auth, sign-in, analytics, skill lint
 ```
 
 ## License

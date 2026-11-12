@@ -6,6 +6,17 @@
 - CI workflow runs with a read-only GitHub token (`permissions: contents: read`).
 
 ### Added
+- Sign-in with a NewsCatcher platform account (OAuth 2.1), off unless `NEWSCATCHER_OAUTH=1` with
+  `NEWSCATCHER_PUBLIC_URL` and `NEWSCATCHER_SUPABASE_URL` set (`NEWSCATCHER_PLATFORM_API_*` optional). MCP clients get
+  a Connect button: a 401 names the protected-resource document, which names this server as the authorization server;
+  its metadata is the auth project's with `issuer` and `registration_endpoint` rewritten here. Documents are served at
+  the path-suffixed and bare locations and under the OIDC name. `POST /oauth/register` forwards dynamic registration,
+  registering clients that name no `token_endpoint_auth_method` as public (`none`). `GET /` names the MCP endpoint.
+- A Bearer value shaped like a JWT is a platform access token: it is exchanged for the Default API Key of the user's
+  default workspace through the platform API (which also validates it), cached in memory for five minutes per token,
+  one lookup shared by concurrent requests. A rejected token gets 401 `invalid_token`; a signed-in user with no
+  workspace or key gets tool errors that say what to do. API keys work exactly as before; `x-api-key` wins over a
+  token.
 - Cursor Marketplace listing for the plugin: `.cursor-plugin/marketplace.json` at the repo root, and in the Cursor
   manifest a `NEWSCATCHER_API_KEY` variable (the placeholder `plugin/mcp.json` already uses), `logo` and
   `repository`. New `plugin/assets/logo.png` and `plugin/README.md` (setup for Cursor, Claude Code and Codex).
