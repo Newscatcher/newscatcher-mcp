@@ -29,6 +29,7 @@ logger.info(
         "toolsets": sorted(config.toolsets),
         "max_call_seconds": config.max_call_seconds,
         "key_in_url_allowed": config.allow_key_in_url,
+        "sign_in": config.oauth is not None,
     },
 )
 

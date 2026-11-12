@@ -11,6 +11,7 @@ import respx
 from fastmcp import Client, FastMCP
 
 from src import client as client_module
+from src import oauth as oauth_module
 from src.config import Config, load_config
 from src.server import build_server
 
@@ -91,12 +92,17 @@ def fast(monkeypatch: pytest.MonkeyPatch) -> None:
         """Skip the wait."""
 
     monkeypatch.setattr(client_module, "_sleep", no_sleep)
+    monkeypatch.setattr(oauth_module, "_sleep", no_sleep)
+    oauth_module.clear_caches()
     monkeypatch.setattr(client_module._PACERS["news:/articles"], "interval_s", 0.0)
     monkeypatch.setenv("NEWSCATCHER_API_KEY", "test")
     for var in (
         "NEWSCATCHER_TOOLSETS", "NEWSCATCHER_ALLOW_KEY_IN_URL", "VERCEL_TARGET_ENV",
         "POSTHOG_PROJECT_API_KEY", "POSTHOG_ENABLED", "POSTHOG_HOST", "POSTHOG_PORT",
         "POSTHOG_APP", "POSTHOG_ENVIRONMENT", "POSTHOG_IDENTITY_SALT",
+        "NEWSCATCHER_OAUTH", "NEWSCATCHER_PUBLIC_URL", "NEWSCATCHER_SUPABASE_URL",
+        "NEWSCATCHER_SUPABASE_PORT", "NEWSCATCHER_SUPABASE_ENDPOINT",
+        "NEWSCATCHER_PLATFORM_API_URL", "NEWSCATCHER_PLATFORM_API_PORT", "NEWSCATCHER_PLATFORM_API_ENDPOINT",
     ):
         monkeypatch.delenv(var, raising=False)
     for api in ("NEWS", "AGENT"):  # tests mock the production host

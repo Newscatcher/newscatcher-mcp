@@ -32,5 +32,9 @@ working proof of concept.
 - Keys are forwarded only to the NewsCatcher APIs. They are never logged, never returned in tool results, and never
   sent to analytics; analytics, when enabled, uses a salted one-way hash of the key.
 - Keys in the URL (`?apiKey=`) are rejected unless the operator explicitly enables them, because URLs end up in logs.
+- With sign-in on, a caller may send a platform access token instead of a key. The server never verifies or stores
+  signing secrets: the platform API checks the token and returns the caller's workspace key, which is held in memory
+  for at most five minutes, keyed by a SHA-256 of the token. Tokens and keys are never logged. A token the platform
+  rejects gets 401 `invalid_token`; a token is never forwarded to the APIs as a key.
 
 If you believe your API key was exposed, rotate it in the [NewsCatcher platform](https://platform.newscatcherapi.com).
