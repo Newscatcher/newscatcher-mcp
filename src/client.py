@@ -83,6 +83,8 @@ def error_hint(err: ApiError, api: Api) -> str:
     if err.status == 402:
         return "The credit balance does not cover this call. Nothing was charged. Top up in the NewsCatcher platform."
     if err.status == 403:
+        if "another newscatcher product" in err.message.lower():
+            return ""  # a key for another product, not a plan limit: the message already says what to do
         if api == "news":
             return (
                 "The plan does not include this (for example a larger limit/page_size or an Enterprise field). "

@@ -5,6 +5,10 @@
 ### Security
 - CI workflow runs with a read-only GitHub token (`permissions: contents: read`).
 
+### Fixed
+- A 403 for a key that belongs to another NewsCatcher product no longer adds the "plan does not include this"
+  advice: the API's own message already says what to do.
+
 ### Added
 - Sign-in with a NewsCatcher platform account (OAuth 2.1), off unless `NEWSCATCHER_OAUTH=1` with
   `NEWSCATCHER_PUBLIC_URL` and `NEWSCATCHER_SUPABASE_URL` set (`NEWSCATCHER_PLATFORM_API_*` optional). MCP clients get

@@ -516,3 +516,11 @@ async def test_api_key_never_leaks_into_results_or_logs(setup, capsys, monkeypat
     assert h.calls[0].headers["x-api-key"] == secret  # it was sent upstream...
     out = capsys.readouterr()
     assert secret not in text and secret not in out.err and secret not in out.out  # ...and nowhere else
+
+
+def test_403_for_a_key_of_another_product_gets_no_plan_hint():
+    from src.client import ApiError, error_hint
+
+    other = ApiError(403, "This API key belongs to another NewsCatcher product and cannot be used with the News API.")
+    assert error_hint(other, "news") == ""
+    assert "plan does not include" in error_hint(ApiError(403, "Forbidden"), "news")
