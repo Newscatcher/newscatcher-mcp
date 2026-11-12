@@ -196,6 +196,21 @@ async def _gateway(client: httpx.AsyncClient, method: str, path: str, headers: d
             continue
         break
     if response.status_code == 401:
+        # Enough to tell an expired token from one the platform does not accept at all; never the token itself.
+        claims = _claims(headers.get("Authorization", "").removeprefix("Bearer "))
+        try:
+            detail = str(response.json().get("detail") or "")[:200]
+        except (ValueError, AttributeError):
+            detail = ""
+        logger.warning(
+            "Platform API rejected the access token",
+            extra={
+                "path": path,
+                "detail": detail,
+                "issued_to_client": "client_id" in claims,
+                "expired": isinstance(claims.get("exp"), (int, float)) and claims["exp"] < time.time(),
+            },
+        )
         raise TokenRejected()
     if response.status_code >= 400:
         logger.warning("Platform API refused the key lookup", extra={"path": path, "status": response.status_code})

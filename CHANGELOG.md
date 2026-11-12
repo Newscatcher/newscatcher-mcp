@@ -17,6 +17,8 @@
   one lookup shared by concurrent requests. A rejected token gets 401 `invalid_token`; a signed-in user with no
   workspace or key gets tool errors that say what to do. API keys work exactly as before; `x-api-key` wins over a
   token.
+- A token the platform API rejects is logged with the API's reason and whether the token was issued to a connected
+  app or had expired (never the token).
 - Cursor Marketplace listing for the plugin: `.cursor-plugin/marketplace.json` at the repo root, and in the Cursor
   manifest a `NEWSCATCHER_API_KEY` variable (the placeholder `plugin/mcp.json` already uses), `logo` and
   `repository`. New `plugin/assets/logo.png` and `plugin/README.md` (setup for Cursor, Claude Code and Codex).
