@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-12
+
 ### Security
 - CI workflow runs with a read-only GitHub token (`permissions: contents: read`).
 

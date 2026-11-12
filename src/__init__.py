@@ -1,3 +1,3 @@
 """NewsCatcher MCP server: news search, article listing, stories and the NewsCatcher research agent."""
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
