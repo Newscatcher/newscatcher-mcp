@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-16
+
 ### Changed
 - `get_research` on a company run explains companies that got no news because the run did not finish them
   (`news_status` `out_of_time`, `model_unavailable`, `internal_error`, `failed` or `not_searched`), says their news
