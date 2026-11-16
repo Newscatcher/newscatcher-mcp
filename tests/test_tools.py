@@ -424,6 +424,14 @@ async def test_dry_run_counts_saved_list_and_prices_the_monitor(setup):
     assert "$" not in text
 
 
+async def test_dry_run_of_many_typed_companies_runs_in_parts(setup):
+    h = setup(lambda c: {"json": {"credits_balance": 1_000_000}})
+    domains = [f"c{i}.com" for i in range(60)]
+    text, _ = await h.call("start_research", {"companies": domains, "dry_run": True})
+    assert "runs in parts of 50 companies" in text
+    assert "run as a batch" not in text
+
+
 def test_query_tips():
     assert query_tips("Product recalls announced by US auto makers since September 1, 2026, with model and reason", "events") == []
     assert len(query_tips("layoffs", "events")) == 2

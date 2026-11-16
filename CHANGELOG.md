@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Changed
+- `get_research` on a company run explains companies that got no news because the run did not finish them
+  (`news_status` `out_of_time`, `model_unavailable`, `internal_error`, `failed` or `not_searched`), says their news
+  is missing rather than empty, and names the `start_research(companies=[…])` call that runs them again.
+- `start_research(dry_run=true)` with more than 50 typed companies says the run goes in parts of 50; only a saved
+  list of more than 50 still runs as a batch of several runs.
+
 ## [0.2.0] - 2026-11-12
 
 ### Security

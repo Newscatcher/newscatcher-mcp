@@ -25,6 +25,16 @@ ETA = {
     "companies": "company runs take ~2–4 minutes per 6 companies",
 }
 
+# A company's news_status when the run ended its turn without news (the API puts the company's error code there), in
+# the order they are explained. Unlike no_news, these say nothing about whether the company had news.
+MISSING_NEWS = {
+    "out_of_time": "ran out of time",
+    "model_unavailable": "a model was unavailable",
+    "internal_error": "something went wrong",
+    "failed": "something went wrong",
+    "not_searched": "the run ended before reaching them",
+}
+
 # PAYG list prices in credits, approved Oct 15 2026; company monitors raised to 3,000 credits a company a month on
 # Nov 2. Used only for dry-run estimates. Enterprise plans can differ. Change them here if pricing changes.
 PRICES: dict[str, Any] = {
@@ -359,7 +369,11 @@ def register_research_tools(mcp: FastMCP, config: Config) -> None:
                 + (f" (list {company_list_id})" if company_list_id else "")
                 + f", last {lookback_days or 30} days"
                 + (f', only "{clip(query, 200)}"' if (query or "").strip() else ", every story")
-                + ("; more than 50 companies run as a batch of several runs" if n_companies > 50 else "")
+                + (
+                    ("; more than 50 companies run as a batch of several runs" if company_list_id else "; runs in parts of 50 companies")
+                    if n_companies > 50
+                    else ""
+                )
             )
         cost_max = events_max(mode, max_rows) if kind == "events" else PRICES["per_company"] * n_companies
         tips = query_tips(query, kind)
@@ -601,6 +615,16 @@ def render_run(d: dict[str, Any], offset: int, limit: int) -> str:
             for c in companies
         ]
         lines.append(f"Coverage: {' · '.join(cov[:30])}" + (f" · … {len(cov) - 30} more" if len(cov) > 30 else ""))
+        missing = [c for c in companies if c.get("news_status") in MISSING_NEWS]
+        if missing:
+            seen = sorted({c["news_status"] for c in missing}, key=list(MISSING_NEWS).index)
+            lines.append(
+                f"{plural(len(missing), 'company', 'companies')} got no news because the run did not finish them "
+                f"({'; '.join(f'{s}: {MISSING_NEWS[s]}' for s in seen)}). Their news is missing, not empty: offer to run "
+                f"them again with start_research(companies=[{', '.join(repr(c.get('domain')) for c in missing[:10])}"
+                + (", …" if len(missing) > 10 else "")
+                + "])."
+            )
     if d.get("report"):
         lines.append(f"Briefing:\n{clip(d['report'], 4000)}")
     if not rows:
