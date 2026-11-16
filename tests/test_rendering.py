@@ -61,6 +61,19 @@ def test_render_running_and_finished_runs():
     assert "export_research" not in done
 
 
+def test_companies_without_news_from_an_error_are_explained():
+    companies = [{"company": "Apple", "domain": "apple.com", "news_status": "out_of_time", "stories": 0},
+                 {"company": "Wise", "domain": "wise.com", "news_status": "no_news", "stories": 0},
+                 {"company": "Monzo", "domain": "monzo.com", "news_status": "not_searched"}]
+    t = render_run({"run_id": "r", "kind": "companies", "status": "succeeded", "companies": companies, "rows": []}, 0, 25)
+    assert "2 companies got no news because the run did not finish them" in t
+    assert "out_of_time: ran out of time; not_searched: the run ended before reaching them" in t
+    assert "start_research(companies=['apple.com', 'monzo.com'])" in t
+    found = render_run({"run_id": "r", "kind": "companies", "status": "succeeded", "rows": [],
+                        "companies": [{"company": "Wise", "domain": "wise.com", "news_status": "no_news", "stories": 0}]}, 0, 25)
+    assert "did not finish" not in found
+
+
 def test_batch_progress_in_words():
     t = render_run({"batch_id": "b1", "kind": "companies", "status": "running",
                     "progress": {"runs_done": 1, "runs_total": 3, "companies_done": 20, "companies_total": 60}}, 0, 25)
