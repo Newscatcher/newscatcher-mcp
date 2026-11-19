@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+- `llms-install.md`: setup steps for AI agents (such as Cline) that install MCP servers from the repository. It
+  points them at the hosted endpoint instead of a local install, with the Cline `streamableHttp` config.
+
 ## [0.2.1] - 2026-11-16
 
 ### Changed
