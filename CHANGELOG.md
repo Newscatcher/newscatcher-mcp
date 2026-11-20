@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+- README: connection steps for Hermes Agent (`config.yaml`, sign-in or key) and OpenClaw (`openclaw mcp add` with
+  Streamable HTTP and sign-in).
+
+### Changed
+- README: connection examples use the hosted server `https://mcp.newscatcherapi.com/mcp` instead of a
+  `<deployment>` placeholder, with a note to swap in your own URL when self-hosting. The intro mentions sign-in
+  alongside API keys.
+
 ## [0.2.1] - 2026-11-16
 
 ### Changed
