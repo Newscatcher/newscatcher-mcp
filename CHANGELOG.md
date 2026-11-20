@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Added
+- `llms-install.md`: setup steps for AI agents (such as Cline) that install MCP servers from the repository. It
+  points them at the hosted endpoint instead of a local install, with the Cline `streamableHttp` config.
 - README: connection steps for Hermes Agent (`config.yaml`, sign-in or key) and OpenClaw (`openclaw mcp add` with
   Streamable HTTP and sign-in).
 
