@@ -1,14 +1,17 @@
 # NewsCatcher MCP
 
 MCP server for the NewsCatcher **News API** (search, exact counts, stories) and the **research agent** (verified
-event datasets, company news, company lists, monitors). Hosted on Vercel as stateless Streamable HTTP; every user
-brings their own NewsCatcher Platform API key. 
+event datasets, company news, company lists, monitors). Hosted at `https://mcp.newscatcherapi.com/mcp` as stateless
+Streamable HTTP; every user signs in with their NewsCatcher account or brings their own NewsCatcher Platform API key.
 
 Tool names, descriptions, defaults and output wording were tuned against model evals: change them deliberately.
 
 ## Connect
 
-**Sign in with your NewsCatcher account** (deployments with sign-in on): add `https://<deployment>/mcp` as a connector
+The examples below use the hosted server, `https://mcp.newscatcherapi.com/mcp`. Running your own deployment (see
+[Deploy](#deploy-vercel) and [Run locally](#run-locally))? Use its URL instead.
+
+**Sign in with your NewsCatcher account:** add `https://mcp.newscatcherapi.com/mcp` as a connector
 in Claude, ChatGPT or Cursor and press Connect. You sign in to the NewsCatcher platform, approve the app, and the
 server uses your workspace's Default API Key. No key to copy.
 
@@ -17,7 +20,7 @@ server uses your workspace's Default API Key. No key to copy.
 **Claude Code**
 
 ```bash
-claude mcp add --transport http newscatcher https://<deployment>/mcp --header "x-api-key: YOUR_KEY"
+claude mcp add --transport http newscatcher https://mcp.newscatcherapi.com/mcp --header "x-api-key: YOUR_KEY"
 ```
 
 **Cursor / any MCP client** (`mcp.json`)
@@ -27,12 +30,35 @@ claude mcp add --transport http newscatcher https://<deployment>/mcp --header "x
   "mcpServers": {
     "newscatcher": {
       "type": "http",
-      "url": "https://<deployment>/mcp",
+      "url": "https://mcp.newscatcherapi.com/mcp",
       "headers": { "x-api-key": "YOUR_KEY" }
     }
   }
 }
 ```
+
+**Hermes Agent** (`~/.hermes/config.yaml`)
+
+```yaml
+mcp_servers:
+  newscatcher:
+    url: "https://mcp.newscatcherapi.com/mcp?client=hermes"
+    auth: oauth                      # sign in with your NewsCatcher account
+    # or, with a key instead of signing in:
+    # headers:
+    #   x-api-key: "YOUR_KEY"
+```
+
+**OpenClaw**
+
+```bash
+openclaw mcp add newscatcher --url "https://mcp.newscatcherapi.com/mcp?client=openclaw" --transport streamable-http --auth oauth
+openclaw mcp login newscatcher       # sign in with your NewsCatcher account
+openclaw mcp doctor newscatcher --probe
+```
+
+OpenClaw needs `--transport streamable-http`: without it, remote servers default to SSE, which this server does not
+serve.
 
 `Authorization: Bearer YOUR_KEY` works as well. Clients that cannot send headers (claude.ai custom connectors) need
 `?apiKey=YOUR_KEY` on the URL, which is off unless the deployment sets `NEWSCATCHER_ALLOW_KEY_IN_URL=1` (keys in URLs
@@ -85,7 +111,7 @@ instructions tell models so; some skills mention them for local setups.
 A raw MCP call (after `initialize`), e.g. with curl:
 
 ```bash
-curl -X POST https://<deployment>/mcp \
+curl -X POST https://mcp.newscatcherapi.com/mcp \
   -H "x-api-key: YOUR_KEY" -H "content-type: application/json" \
   -H "accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search_news","arguments":{"query":"Nvidia guidance","window":"2d","effort":"low"}}}'
