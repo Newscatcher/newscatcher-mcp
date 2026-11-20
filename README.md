@@ -1,5 +1,7 @@
 # NewsCatcher MCP
 
+[![NewsCatcher MCP MCP server – quality and maintenance score on Glama](https://glama.ai/mcp/servers/Newscatcher/newscatcher-mcp/badges/score.svg)](https://glama.ai/mcp/servers/Newscatcher/newscatcher-mcp)
+
 MCP server for the NewsCatcher **News API** (search, exact counts, stories) and the **research agent** (verified
 event datasets, company news, company lists, monitors). Hosted at `https://mcp.newscatcherapi.com/mcp` as stateless
 Streamable HTTP; every user signs in with their NewsCatcher account or brings their own NewsCatcher Platform API key.
