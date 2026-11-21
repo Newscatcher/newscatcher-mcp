@@ -13,9 +13,10 @@ from starlette.responses import JSONResponse
 
 from src import VERSION
 from src.analytics import AnalyticsFlushMiddleware, init_analytics
-from src.auth import RequireApiKeyMiddleware, request_toolsets
+from src.auth import RequireCredentialsMiddleware, request_toolsets
 from src.config import Config
 from src.guides import register_guides
+from src.oauth import register_oauth_routes
 from src.tools.common import text_result
 from src.tools.lists import register_list_tools
 from src.tools.monitors import register_monitor_tools
@@ -33,6 +34,7 @@ Pick the tool by the question:
 - Recent news about specific companies (a watchlist, portfolio, accounts, competitors): start_research with companies or a company_list_id.
 - Keep any of these updated on a schedule: start_research(keep_updated=true) or create_monitor; read results with get_monitor_updates.
 - Reusable sets of companies: save_company_list, get_company_list, edit_company_list.
+- Send results to the user's webhooks: webhook_ids on start_research or create_monitor (ids from the NewsCatcher Platform's Webhooks page; ask, never invent); resend_results sends them again.
 - Credits, limits, plan: get_account.
 
 Dates: "this week" = Monday to now, "last week" = the previous Monday–Sunday, "last month" = the previous calendar month (UTC); a window without an end ends today. Say the exact dates you used.
@@ -148,6 +150,8 @@ def build_server(config: Config) -> FastMCP:
     register_list_tools(mcp, config)
     register_monitor_tools(mcp, config)
     register_guides(mcp)
+    if config.oauth is not None:
+        register_oauth_routes(mcp, config.oauth)
 
     @mcp.custom_route("/health", methods=["GET"])
     async def health(request: Request) -> JSONResponse:
@@ -165,7 +169,7 @@ def build_server(config: Config) -> FastMCP:
 
 
 def create_app(config: Config) -> tuple[FastMCP, Any]:
-    """Build the server and its ASGI app: stateless Streamable HTTP at ``/mcp``, a key required on every POST.
+    """Build the server and its ASGI app: stateless Streamable HTTP at ``/mcp``, a key or sign-in on every POST.
 
     Args:
         config (Config): Server settings.
@@ -178,7 +182,7 @@ def create_app(config: Config) -> tuple[FastMCP, Any]:
     posthog = init_analytics(mcp, config)
     # stateless_http is mandatory on serverless: a request can land on a cold instance with no memory of a session.
     app = mcp.http_app(path="/mcp", stateless_http=True)
-    app.add_middleware(RequireApiKeyMiddleware, config=config, mcp_path="/mcp")
+    app.add_middleware(RequireCredentialsMiddleware, config=config, mcp_path="/mcp")
     if posthog is not None:
         app.add_middleware(AnalyticsFlushMiddleware, client=posthog)
     return mcp, app

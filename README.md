@@ -1,19 +1,28 @@
 # NewsCatcher MCP
 
+[![NewsCatcher MCP MCP server – quality and maintenance score on Glama](https://glama.ai/mcp/servers/Newscatcher/newscatcher-mcp/badges/score.svg)](https://glama.ai/mcp/servers/Newscatcher/newscatcher-mcp)
+
 MCP server for the NewsCatcher **News API** (search, exact counts, stories) and the **research agent** (verified
-event datasets, company news, company lists, monitors). Hosted on Vercel as stateless Streamable HTTP; every user
-brings their own NewsCatcher Platform API key. 
+event datasets, company news, company lists, monitors). Hosted at `https://mcp.newscatcherapi.com/mcp` as stateless
+Streamable HTTP; every user signs in with their NewsCatcher account or brings their own NewsCatcher Platform API key.
 
 Tool names, descriptions, defaults and output wording were tuned against model evals: change them deliberately.
 
 ## Connect
 
-Get an API key at [platform.newscatcherapi.com](https://platform.newscatcherapi.com).
+The examples below use the hosted server, `https://mcp.newscatcherapi.com/mcp`. Running your own deployment (see
+[Deploy](#deploy-vercel) and [Run locally](#run-locally))? Use its URL instead.
+
+**Sign in with your NewsCatcher account:** add `https://mcp.newscatcherapi.com/mcp` as a connector
+in Claude, ChatGPT or Cursor and press Connect. You sign in to the NewsCatcher platform, approve the app, and the
+server uses your workspace's Default API Key. No key to copy.
+
+**Or bring an API key.** Get one at [platform.newscatcherapi.com](https://platform.newscatcherapi.com).
 
 **Claude Code**
 
 ```bash
-claude mcp add --transport http newscatcher https://<deployment>/mcp --header "x-api-key: YOUR_KEY"
+claude mcp add --transport http newscatcher https://mcp.newscatcherapi.com/mcp --header "x-api-key: YOUR_KEY"
 ```
 
 **Cursor / any MCP client** (`mcp.json`)
@@ -23,16 +32,39 @@ claude mcp add --transport http newscatcher https://<deployment>/mcp --header "x
   "mcpServers": {
     "newscatcher": {
       "type": "http",
-      "url": "https://<deployment>/mcp",
+      "url": "https://mcp.newscatcherapi.com/mcp",
       "headers": { "x-api-key": "YOUR_KEY" }
     }
   }
 }
 ```
 
+**Hermes Agent** (`~/.hermes/config.yaml`)
+
+```yaml
+mcp_servers:
+  newscatcher:
+    url: "https://mcp.newscatcherapi.com/mcp?client=hermes"
+    auth: oauth                      # sign in with your NewsCatcher account
+    # or, with a key instead of signing in:
+    # headers:
+    #   x-api-key: "YOUR_KEY"
+```
+
+**OpenClaw**
+
+```bash
+openclaw mcp add newscatcher --url "https://mcp.newscatcherapi.com/mcp?client=openclaw" --transport streamable-http --auth oauth
+openclaw mcp login newscatcher       # sign in with your NewsCatcher account
+openclaw mcp doctor newscatcher --probe
+```
+
+OpenClaw needs `--transport streamable-http`: without it, remote servers default to SSE, which this server does not
+serve.
+
 `Authorization: Bearer YOUR_KEY` works as well. Clients that cannot send headers (claude.ai custom connectors) need
 `?apiKey=YOUR_KEY` on the URL, which is off unless the deployment sets `NEWSCATCHER_ALLOW_KEY_IN_URL=1` (keys in URLs
-end up in access logs). OAuth will replace this.
+end up in access logs). Signing in avoids both.
 
 **Options on the URL**
 
@@ -64,6 +96,7 @@ end-to-end eval (37 of the 39 critical-skill test prompts at 4+ of 5 with Claude
 | research | `start_research` | Research agent run: events dataset or company news; `dry_run` estimates cost free | per run |
 | research | `get_research` | Wait for a run and show its table; list runs | free |
 | research | `cancel_research` | Stop a run (not charged) | free |
+| research | `resend_results` | Send a run's or monitor run's results to its webhooks again | free |
 | lists | `save_company_list` / `get_company_list` / `edit_company_list` | Reusable company lists | free |
 | monitors | `create_monitor` / `get_monitor` / `get_monitor_updates` / `update_monitor` | Scheduled updates, only what is new | per run / per company |
 
@@ -76,12 +109,15 @@ instructions tell models so; some skills mention them for local setups.
 `get_research` also takes `exclude_rows` (leave out rows after checking; counts cover the kept rows) and
 `sort` (`newest`, `oldest`, `importance`).
 
+Webhooks: `start_research` and `create_monitor` take `webhook_ids` (from the NewsCatcher Platform's Webhooks page) to
+send results there; `keep_updated` monitors get the run's webhooks.
+
 ## Example
 
 A raw MCP call (after `initialize`), e.g. with curl:
 
 ```bash
-curl -X POST https://<deployment>/mcp \
+curl -X POST https://mcp.newscatcherapi.com/mcp \
   -H "x-api-key: YOUR_KEY" -H "content-type: application/json" \
   -H "accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search_news","arguments":{"query":"Nvidia guidance","window":"2d","effort":"low"}}}'
@@ -112,6 +148,19 @@ curl -X POST https://<deployment>/mcp \
 
 URLs are split into host / port / endpoint; the scheme is always https and defaults point at the
 PROD APIs. The only secrets are the two optional PostHog values.
+
+**Sign-in with a platform account** (OAuth 2.1; all of these or none, otherwise the server logs why and runs with API
+keys only):
+
+| Variable | Default | What |
+|---|---|---|
+| `NEWSCATCHER_OAUTH` | off | `1` turns sign-in on. |
+| `NEWSCATCHER_PUBLIC_URL` | – | This deployment's own origin, e.g. `https://mcp.example.com` (no path; a trailing `/` or `/mcp` is dropped). Goes verbatim into the discovery documents, so set it **per Vercel environment**: preview and production each name themselves. |
+| `NEWSCATCHER_SUPABASE_URL` | – | **Host** of the auth project users sign in to the platform with (`<ref>.supabase.co`). No default on purpose. |
+| `NEWSCATCHER_PLATFORM_API_URL` / `_PORT` / `_ENDPOINT` | `platform-api.newscatcherapi.com` | Platform API that turns a signed-in user into their workspace key. |
+
+The auth project needs its OAuth 2.1 server and dynamic client registration enabled, with the authorization (consent)
+path pointing at the platform app. How it works: `src/oauth.py`.
 
 ## Deploy (Vercel)
 
@@ -157,13 +206,14 @@ server.py                      Entrypoint: module-level `mcp` and `app` (Vercel)
 src/
   server.py                    build_server / create_app, instructions, toolset + input-error middleware
   auth.py                      Key per request, 401 middleware, ?tools= / ?client=
+  oauth.py                     Sign-in: discovery, client registration, platform token → workspace key
   client.py                    HTTP client: retries, pacing, no retry of paid writes, error hints
   config.py, log.py            Settings; structured JSON logging
   formatting.py, lenient.py    Compact text output; lenient list/object input
   analytics.py                 Optional PostHog
   guides.py                    Guide resources and prompts
   tools/                       news, research, lists, monitors (+ common registration, shared params)
-tests/                         Tools, rendering, HTTP/auth, analytics, skill lint
+tests/                         Tools, rendering, HTTP/auth, sign-in, analytics, skill lint
 ```
 
 ## License

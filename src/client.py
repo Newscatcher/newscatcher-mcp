@@ -31,6 +31,26 @@ MAY_HAVE_GONE_THROUGH = (
     " before trying again."
 )
 
+# 429s that are not rate limits: retrying cannot succeed (a resend is allowed once a minute per webhook).
+NO_RETRY_CODES = {"resend_too_soon"}
+
+# Advice for Agent API error codes whose status alone would be explained wrongly (a 403 that is not about the plan,
+# a 409 that is not about a run still going).
+CODE_HINTS = {
+    "webhook_not_found": "A webhook id is unknown: check the ids on the NewsCatcher Platform's Webhooks page. Nothing was created or charged.",
+    "webhook_not_allowed": (
+        "A webhook is from another workspace or inactive, or this key has no Platform workspace. Use an active webhook "
+        "of this workspace, or leave webhook_ids out. Nothing was created or charged."
+    ),
+    "too_many_webhooks": "Too many webhooks for one run or monitor on this workspace: send fewer. Nothing was created or charged.",
+    "not_allowed": "Not allowed: only the owner of this run or monitor can do this.",
+    "webhook_not_attached": "That webhook is not attached to this run or monitor: leave webhook_id out to send to the attached ones.",
+    "no_webhooks": "No webhooks are attached. Attach them in the NewsCatcher Platform, or start the run with webhook_ids.",
+    "nothing_to_send": "Nothing to send: the run failed or was cancelled, or no monitor run found anything new.",
+    "run_in_progress": "The run has not finished yet; it sends to its webhooks by itself when it succeeds.",
+    "resend_too_soon": "Already sent to this webhook within the last minute: it is on its way. Do not resend now.",
+}
+
 # Patched in tests so retry back-off does not slow the suite down.
 _sleep = asyncio.sleep
 
@@ -75,6 +95,8 @@ def error_hint(err: ApiError, api: Api) -> str:
     """
     if err.code == "archive_unavailable":
         return ""  # the message already says what to do
+    if err.code in CODE_HINTS:
+        return CODE_HINTS[err.code]
     if err.status == 401:
         return (
             "The NewsCatcher API key is missing or invalid. Send your key from https://platform.newscatcherapi.com "
@@ -83,6 +105,8 @@ def error_hint(err: ApiError, api: Api) -> str:
     if err.status == 402:
         return "The credit balance does not cover this call. Nothing was charged. Top up in the NewsCatcher platform."
     if err.status == 403:
+        if "another newscatcher product" in err.message.lower():
+            return ""  # a key for another product, not a plan limit: the message already says what to do
         if api == "news":
             return (
                 "The plan does not include this (for example a larger limit/page_size or an Enterprise field). "
@@ -300,9 +324,11 @@ class NewsCatcherClient:
                     return res.text  # CSV and other non-JSON bodies
 
             retry_after_s = _retry_after(res.headers.get("retry-after"))
+            message, code = _error_message(res)
             # 429s come from the organisation-wide rate limit, which other clients on the same key share.
             max_attempts = 6 if res.status_code == 429 else 3
-            if res.status_code in RETRYABLE and attempt < max_attempts and (idempotent or res.status_code == 429):
+            retryable = res.status_code in RETRYABLE and code not in NO_RETRY_CODES
+            if retryable and attempt < max_attempts and (idempotent or res.status_code == 429):
                 if res.status_code == 429:
                     base = max(retry_after_s or 1, 1) * 2 ** (attempt - 1)
                 else:
@@ -310,7 +336,6 @@ class NewsCatcherClient:
                 await _sleep(min(base + random.random() * 0.3, 10.0))
                 continue
 
-            message, code = _error_message(res)
             if not idempotent and res.status_code >= 502:
                 message += MAY_HAVE_GONE_THROUGH
             raise ApiError(res.status_code, message[:800], code, correlation_id, retry_after_s)

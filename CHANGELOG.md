@@ -2,11 +2,88 @@
 
 ## [Unreleased]
 
+### Added
+- `llms-install.md`: setup steps for AI agents (such as Cline) that install MCP servers from the repository. It
+  points them at the hosted endpoint instead of a local install, with the Cline `streamableHttp` config.
+- README: connection steps for Hermes Agent (`config.yaml`, sign-in or key) and OpenClaw (`openclaw mcp add` with
+  Streamable HTTP and sign-in).
+
+### Changed
+- README: connection examples use the hosted server `https://mcp.newscatcherapi.com/mcp` instead of a
+  `<deployment>` placeholder, with a note to swap in your own URL when self-hosting. The intro mentions sign-in
+  alongside API keys.
+
+## [0.3.0] - 2026-11-20
+
+### Added
+- Webhooks. `start_research` and `create_monitor` take `webhook_ids` (up to 20, from the NewsCatcher Platform's
+  Webhooks page) and send them as the Agent API's `webhook_ids`; the monitor `keep_updated` creates gets the run's
+  webhooks. `dry_run` and the start message say where the results go. A run whose monitor could not get its
+  webhooks says so (`keep_updated.webhooks_error`).
+- `resend_results` tool: sends a finished run's, or a monitor run's, results to its webhooks again
+  (`POST /runs/{id}/webhooks/deliver`, `POST /monitors/{id}/webhooks/deliver`), to all of them or one `webhook_id`.
+- Error advice for the webhook codes (`webhook_not_found`, `webhook_not_allowed`, `too_many_webhooks`,
+  `webhook_not_attached`, `no_webhooks`, `nothing_to_send`, `run_in_progress`, `resend_too_soon`, `not_allowed`),
+  where the status alone would be explained wrongly (a 403 read as a plan limit, a 409 read as "still running").
+- Instructions: one line on webhooks.
+
+### Fixed
+- A 429 `resend_too_soon` is not retried: the resend is allowed once a minute per webhook, so a retry cannot succeed.
+
+### Changed
+- `get_research` on a company run (or batch) starts with a summary from the API's `company_counts`,
+  `companies_failed` and `outcome`, e.g. "38 of 40 done: 31 found, 5 no news, 2 failed (not charged) · outcome:
+  partial", and notes that a partial run still counts as succeeded. `companies_failed` alone is enough to explain
+  missing news and offer a rerun. Runs without these fields render as before.
+- Company run timing follows the account's company queue (about 3 companies at a time across all of an account's
+  company runs and monitors): new time text, and `start_research(dry_run=true)` estimates the time from the number
+  of companies and says that starting several company runs at once is not faster.
+- While a company run is going, pending companies are described as queued for a free place, not stuck, and a long
+  wait for a big list is called normal (wait or refresh, rather than cancel).
+- A failed run says it was not charged and to try again (in a few minutes when the news search did not work),
+  instead of "No rows". A company run with no rows no longer suggests rephrasing or `mode=standard`.
+- Skills: `company-watchlist` timing; `agent-api-integration` documents `company_counts`, `companies_failed`,
+  `outcome`, webhooks and resend; `news-alerts-integration` offers Platform webhooks before polling code.
+
+## [0.2.1] - 2026-11-16
+
+### Changed
+- `get_research` on a company run explains companies that got no news because the run did not finish them
+  (`news_status` `out_of_time`, `model_unavailable`, `internal_error`, `failed` or `not_searched`), says their news
+  is missing rather than empty, and names the `start_research(companies=[…])` call that runs them again.
+- `start_research(dry_run=true)` with more than 50 typed companies says the run goes in parts of 50; only a saved
+  list of more than 50 still runs as a batch of several runs.
+
+## [0.2.0] - 2026-11-12
+
 ### Security
 - CI workflow runs with a read-only GitHub token (`permissions: contents: read`).
 
+### Fixed
+- A 403 for a key that belongs to another NewsCatcher product no longer adds the "plan does not include this"
+  advice: the API's own message already says what to do.
+
 ### Added
-- Dev environment: CI runs on pushes and pull requests to `dev`; the README documents the `dev` Vercel environment.
+- Sign-in with a NewsCatcher platform account (OAuth 2.1), off unless `NEWSCATCHER_OAUTH=1` with
+  `NEWSCATCHER_PUBLIC_URL` and `NEWSCATCHER_SUPABASE_URL` set (`NEWSCATCHER_PLATFORM_API_*` optional). MCP clients get
+  a Connect button: a 401 names the protected-resource document, which names this server as the authorization server;
+  its metadata is the auth project's with `issuer` and `registration_endpoint` rewritten here. Documents are served at
+  the path-suffixed and bare locations and under the OIDC name. `POST /oauth/register` forwards dynamic registration,
+  registering clients that name no `token_endpoint_auth_method` as public (`none`). `GET /` names the MCP endpoint.
+- A Bearer value shaped like a JWT is a platform access token: it is exchanged for the Default API Key of the user's
+  default workspace through the platform API (which also validates it), cached in memory for five minutes per token,
+  one lookup shared by concurrent requests. A rejected token gets 401 `invalid_token`; a signed-in user with no
+  workspace or key gets tool errors that say what to do. API keys work exactly as before; `x-api-key` wins over a
+  token.
+- A token the platform API rejects is logged with the API's reason and whether the token was issued to a connected
+  app or had expired (never the token).
+- Clients are steered off the `openid` scope: the 401 challenge and the protected-resource document name
+  `email profile offline_access`, and the served authorization-server metadata drops `openid`. An auth project that
+  signs with a shared secret (HS256) cannot issue the ID token `openid` implies, so the token request failed after
+  approval.
+- Cursor Marketplace listing for the plugin: `.cursor-plugin/marketplace.json` at the repo root, and in the Cursor
+  manifest a `NEWSCATCHER_API_KEY` variable (the placeholder `plugin/mcp.json` already uses), `logo` and
+  `repository`. New `plugin/assets/logo.png` and `plugin/README.md` (setup for Cursor, Claude Code and Codex).
 - MIT `LICENSE` (the plugin manifest already declared MIT); `license` in `pyproject.toml`, License section in the README.
 
 ## [0.1.0] - 2026-11-06

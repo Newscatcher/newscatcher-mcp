@@ -15,6 +15,7 @@ Base URL `https://api.newscatcherapi.com/agent` (define it once as a constant an
 | Follow it | `GET /runs/{id}` | `status`: queued → running → succeeded, failed or cancelled; `phases` for progress |
 | Stream it | `GET /runs/{id}/progress` | Server-Sent Events `run_status`, `run_event`, `run_result`, `run_error`; resume with `Last-Event-ID` |
 | Results | `GET /runs/{id}` | `columns`, `rows` (each with a source URL), `companies` (coverage per company), `report` (standard/max) |
+| Company run outcome | `GET /runs/{id}` · `GET /batches/{id}` | `company_counts` (companies per `news_status`), `companies_failed` (not charged), `outcome`: `complete` or `partial` (`status` stays `succeeded` for a partial run) |
 | Files | `GET /runs/{id}/export.csv` · `export.xlsx` (the rows, for events and company runs) · `companies.csv` (one row per company, company runs) | after the run succeeds |
 | List runs | `GET /runs?limit=20&kind=events` | to find a run after a crash or timeout |
 | Batches | `GET /batches/{id}` | `progress {runs_done, runs_total, companies_done, companies_total}`; same export paths |
@@ -26,6 +27,8 @@ Base URL `https://api.newscatcherapi.com/agent` (define it once as a constant an
 | List monitors | `GET /monitors` · `GET /monitors/{id}` | settings, schedule, `next_run_at`, `last_run_id` |
 | Deliveries | `GET /monitors/{id}/stories?days=7` (companies) · `GET /monitors/{id}/rows` (dataset) | or per run: `GET /monitors/{id}/runs` → `GET /monitors/runs/{run_id}` |
 | Pause / resume | `PATCH /monitors/{id} {"enabled": false}` · `{"enabled": true, "fill_gap": true}` | `POST /monitors/{id}/run` runs it now |
+| Webhooks | `"webhook_ids": [...]` on `POST /runs`, `POST /monitors` (and `keep_updated.webhook_ids`, default the run's) | ids from the Platform's Webhooks page; results arrive as `agent_run_completed` / `agent_monitor_results_ready` |
+| Resend | `POST /runs/{id}/webhooks/deliver` · `POST /monitors/{id}/webhooks/deliver` `{webhook_id?, run_id?}` | `202`; owner only, once a minute per webhook (`429 resend_too_soon`: don't retry) |
 
 ## Request bodies
 - Events run: `{"query": "Bank M&A deals announced in the US since October 1, 2026", "mode": "fast", "max_rows": 50}`.

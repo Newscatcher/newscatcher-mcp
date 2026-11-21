@@ -16,7 +16,7 @@ from fastmcp import Context, FastMCP
 from fastmcp.tools import ToolResult
 from mcp.types import TextContent
 
-from src.auth import request_integration, resolve_key
+from src.auth import request_integration, resolve_key, sign_in_problem
 from src.client import Api, ApiError, NewsCatcherClient, error_hint
 from src.config import Config
 from src.log import setup_logging
@@ -192,6 +192,9 @@ async def run_tool(
     key = resolve_key(config)
     log = {"tracking_id": tracking_id, "tool": name, "authenticated": bool(key)}
     logger.info(f"Started tool call {name}", extra=log)
+    if not key and (problem := sign_in_problem()):
+        logger.info(f"Tool call {name} has no key for the signed-in user", extra=log)
+        return text_result(f"Error: {problem}", is_error=True)
     is_error = True
     try:
         async with NewsCatcherClient(

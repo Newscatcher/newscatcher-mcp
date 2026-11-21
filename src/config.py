@@ -10,6 +10,8 @@ import os
 import re
 from dataclasses import dataclass, field
 
+from src.log import setup_logging
+
 TOOLSETS: tuple[str, ...] = ("news", "research", "lists", "monitors")
 
 
@@ -62,6 +64,21 @@ def _env_int(name: str, default: int) -> int:
 
 
 @dataclass(frozen=True)
+class OAuthConfig:
+    """Sign-in with a NewsCatcher platform account (OAuth 2.1, Supabase Auth as the authorization server).
+
+    ``public_url`` is this deployment's own origin (``https://host``, no path, no trailing slash): it goes verbatim
+    into the discovery documents, so a client builds its next URL from it. ``supabase_url`` is the auth project that
+    signs users in to the platform; ``platform_api_url`` is the platform API that exchanges a signed-in user's token for
+    their workspace's API key.
+    """
+
+    public_url: str
+    supabase_url: str
+    platform_api_url: str
+
+
+@dataclass(frozen=True)
 class Config:
     """Server settings."""
 
@@ -76,6 +93,8 @@ class Config:
     # Accept ?apiKey= on the MCP URL. Off by default: URLs end up in access logs.
     allow_key_in_url: bool = False
     integration: str | None = None
+    # Sign-in with a platform account; None keeps API keys as the only way in.
+    oauth: OAuthConfig | None = None
 
 
 def service_url(prefix: str, default_host: str, default_endpoint: str) -> str:
@@ -104,6 +123,39 @@ def service_url(prefix: str, default_host: str, default_endpoint: str) -> str:
     return f"https://{host}" + (f":{port}" if port and port != "443" else "") + (f"/{endpoint}" if endpoint else "")
 
 
+def load_oauth_config() -> OAuthConfig | None:
+    """Sign-in settings, when ``NEWSCATCHER_OAUTH=1`` and every value it needs is set.
+
+    All or nothing: with the flag on and a value missing or malformed, the error is logged and the server runs with
+    API keys only, because half-configured sign-in (discovery naming the wrong host) is worse than none.
+    ``NEWSCATCHER_SUPABASE_URL`` has no default, so a fork or a preview never points at real accounts by accident.
+
+    Returns:
+        OAuthConfig | None: The settings, or None when sign-in is off.
+    """
+    if (os.getenv("NEWSCATCHER_OAUTH") or "").strip().lower() not in {"1", "true", "yes", "on"}:
+        return None
+    public_url = (os.getenv("NEWSCATCHER_PUBLIC_URL") or "").strip().rstrip("/").removesuffix("/mcp").rstrip("/")
+    problems: list[str] = []
+    if not re.fullmatch(r"https://[^/\s]+|http://(localhost|127\.0\.0\.1)(:\d+)?", public_url):
+        problems.append("NEWSCATCHER_PUBLIC_URL must be this deployment's https origin, e.g. https://mcp.example.com")
+    supabase_host = (os.getenv("NEWSCATCHER_SUPABASE_URL") or "").strip()
+    if not supabase_host:
+        problems.append("NEWSCATCHER_SUPABASE_URL must be the auth project's host, e.g. <ref>.supabase.co")
+    try:
+        supabase_url = service_url("NEWSCATCHER_SUPABASE", supabase_host, "")
+        platform_api_url = service_url("NEWSCATCHER_PLATFORM_API", "platform-api.newscatcherapi.com", "")
+    except ValueError as err:
+        problems.append(str(err))
+    if problems:
+        setup_logging(__name__).error(
+            "NEWSCATCHER_OAUTH is on but sign-in is misconfigured; running with API keys only",
+            extra={"problems": problems},
+        )
+        return None
+    return OAuthConfig(public_url=public_url, supabase_url=supabase_url, platform_api_url=platform_api_url)
+
+
 def load_config() -> Config:
     """Build the config from environment variables.
 
@@ -118,4 +170,5 @@ def load_config() -> Config:
         max_call_seconds=_env_int("NEWSCATCHER_MAX_CALL_SECONDS", 240),
         allow_key_in_url=os.getenv("NEWSCATCHER_ALLOW_KEY_IN_URL") == "1",
         integration=clean_integration(os.getenv("NEWSCATCHER_INTEGRATION")),
+        oauth=load_oauth_config(),
     )

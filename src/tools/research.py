@@ -14,15 +14,44 @@ from src.config import Config
 from src.formatting import clip, num, plural, table, to_json, when
 from src.lenient import JsonText, TokenList
 from src.tools.common import Call, UserError, register
-from src.tools.params import CompanyItem, Schedule, drop_none, items, schedule_body, schedule_text, to_company_in
+from src.tools.params import (
+    CompanyItem,
+    Schedule,
+    WebhookIds,
+    drop_none,
+    items,
+    schedule_body,
+    schedule_text,
+    to_company_in,
+)
 
 TERMINAL = {"succeeded", "failed", "cancelled"}
+
 
 ETA = {
     "fast": "Fast runs usually finish in 3–10 minutes",
     "standard": "Standard runs take 10–30 minutes",
     "max": "Max runs take 15–40 minutes",
-    "companies": "company runs take ~2–4 minutes per 6 companies",
+    "companies": (
+        "company runs search about 3 companies at a time per account, across all its company runs and monitors; "
+        "typically 1–2 minutes per company, large companies 5–20 minutes each"
+    ),
+}
+
+# Minutes per company at the account's company queue limits, typical and slowest; scales the companies time estimate.
+COMPANY_MINUTES = (1, 2)
+
+# Company news_status values that count as failed (not charged), as the API counts companies_failed.
+FAILED_NEWS = ("out_of_time", "internal_error", "model_unavailable", "failed")
+
+# A company's news_status when the run ended its turn without news (the API puts the company's error code there), in
+# the order they are explained. Unlike no_news, these say nothing about whether the company had news.
+MISSING_NEWS = {
+    "out_of_time": "ran out of time",
+    "model_unavailable": "a model was unavailable",
+    "internal_error": "something went wrong",
+    "failed": "something went wrong",
+    "not_searched": "the run ended before reaching them",
 }
 
 # PAYG list prices in credits, approved Oct 15 2026; company monitors raised to 3,000 credits a company a month on
@@ -163,6 +192,25 @@ def _round_rows(v: object) -> object:
     return v
 
 
+def company_time(n: int) -> str:
+    """Time for a companies run of ``n`` companies, at the account's company queue pace.
+
+    Args:
+        n (int): Number of companies.
+
+    Returns:
+        str: The time line (without the trailing period).
+    """
+    if n <= 0:
+        return ETA["companies"]
+    low, high = (n * m for m in COMPANY_MINUTES)
+    span = f"{low}–{high} minutes" if high < 120 else f"{round(low / 60, 1):g}–{round(high / 60, 1):g} hours"
+    return (
+        f"{ETA['companies']}; about {span} for {plural(n, 'company', 'companies')}. Starting several company runs at "
+        "once does not make them faster: they share the account's queue"
+    )
+
+
 MaxRows = Annotated[
     Literal[50, 100, 150, 200] | None,
     BeforeValidator(_round_rows),
@@ -252,6 +300,7 @@ def register_research_tools(mcp: FastMCP, config: Config) -> None:
                 )
             ),
         ] = None,
+        webhook_ids: WebhookIds = None,
         wait_seconds: Annotated[
             int,
             Field(
@@ -291,8 +340,13 @@ def register_research_tools(mcp: FastMCP, config: Config) -> None:
             body["max_rows"] = max_rows
         if keep_updated:
             body["keep_updated"] = {} if keep_updated is True else {"schedule": schedule_body(keep_updated)}  # type: ignore[arg-type]
+        if webhook_ids:
+            # The monitor keep_updated creates gets the run's webhooks by default.
+            body["webhook_ids"] = webhook_ids
         if dry_run:
-            return await _dry_run(call, query, companies, company_list_id, mode, max_rows, lookback_days, keep_updated, with_companies)
+            return await _dry_run(
+                call, query, companies, company_list_id, mode, max_rows, lookback_days, keep_updated, with_companies, webhook_ids
+            )
         data = await call.client.post("agent", "/runs", drop_none(body))
         kind = data.get("kind") or ("companies" if with_companies else "events")
         if data.get("batch_id"):
@@ -303,13 +357,14 @@ def register_research_tools(mcp: FastMCP, config: Config) -> None:
             f"Started {kind} research: {ident} (status {data.get('status')})."
             + (f" Saved company list {data['list_id']}." if data.get("list_id") else "")
             + (" A monitor will be created when it succeeds." if data.get("keep_updated") else "")
+            + (f" Results go to {plural(len(webhook_ids), 'webhook')} when it succeeds." if webhook_ids else "")
         )
         ref = {"batch_id": data["batch_id"]} if data.get("batch_id") else {"run_id": data.get("run_id")}
         wait = call.wait_budget(wait_seconds)
         if wait_seconds > 0 and wait > 0:
             detail = await wait_for_run(call, ref, wait)
             return f"{head}\n{render_run(detail, 0, 25)}"
-        eta = ETA["companies"] if kind == "companies" else ETA.get(mode, "")
+        eta = company_time(len(companies or [])) if kind == "companies" else ETA.get(mode, "")
         ref_arg = f'batch_id="{data["batch_id"]}"' if data.get("batch_id") else f'run_id="{data.get("run_id")}"'
         return f"{head}\n{eta}. Next: get_research({ref_arg}, wait_seconds=120) to wait for the results."
 
@@ -323,6 +378,7 @@ def register_research_tools(mcp: FastMCP, config: Config) -> None:
         lookback_days: int | None,
         keep_updated: bool | Schedule | None,
         with_companies: bool,
+        webhook_ids: list[str] | None = None,
     ) -> str:
         """Everything start_research would do, without doing it. The reads it makes (list size, balance) are free.
 
@@ -336,6 +392,7 @@ def register_research_tools(mcp: FastMCP, config: Config) -> None:
             lookback_days (int | None): Companies window.
             keep_updated (bool | Schedule | None): Monitor request.
             with_companies (bool): Whether it is a companies run.
+            webhook_ids (list[str] | None): Webhooks to send the results to.
 
         Returns:
             str: The report.
@@ -359,15 +416,26 @@ def register_research_tools(mcp: FastMCP, config: Config) -> None:
                 + (f" (list {company_list_id})" if company_list_id else "")
                 + f", last {lookback_days or 30} days"
                 + (f', only "{clip(query, 200)}"' if (query or "").strip() else ", every story")
-                + ("; more than 50 companies run as a batch of several runs" if n_companies > 50 else "")
+                + (
+                    ("; more than 50 companies run as a batch of several runs" if company_list_id else "; runs in parts of 50 companies")
+                    if n_companies > 50
+                    else ""
+                )
             )
         cost_max = events_max(mode, max_rows) if kind == "events" else PRICES["per_company"] * n_companies
         tips = query_tips(query, kind)
         lines = [
             "Dry run: nothing was started or charged.",
             f"Would start: {what}.",
-            f"Time: {ETA['companies'] if kind == 'companies' else ETA[mode]}.",
+            f"Time: {company_time(n_companies) if kind == 'companies' else ETA[mode]}.",
             *estimate(kind, mode, max_rows, n_companies, keep_updated),
+            (
+                f"Webhooks: the results go to {plural(len(webhook_ids), 'webhook')} when the run succeeds"
+                + (", and the monitor sends each run's new results to them too" if keep_updated else "")
+                + " (the ids are checked when the run starts)."
+            )
+            if webhook_ids
+            else "",
             (
                 f"Balance: {num(balance)} credits"
                 + (" (not enough for this run: top up or pick a smaller option)" if balance < cost_max else "")
@@ -491,6 +559,51 @@ def register_research_tools(mcp: FastMCP, config: Config) -> None:
         target = f"batch {batch_id}" if batch_id else f"run {run_id}"
         return f"Cancel requested: {target} → {(data or {}).get('status') or 'cancelling'}."
 
+    # ------------------------------------------------------------------ resend_results
+    @register(
+        mcp,
+        config,
+        name="resend_results",
+        title="Send results to webhooks again",
+        description=(
+            "Send results to the webhooks attached to a research run or a monitor again: a finished run's results "
+            "(run_id), or a monitor run's new results (monitor_id; default its latest run that found something). "
+            "Also the way to deliver to a webhook attached after the run ended. Goes to every attached webhook, or "
+            "only webhook_id. The owner only; at most once a minute per webhook. Delivery happens in the background "
+            "and shows in the webhook history in the NewsCatcher Platform. Free."
+        ),
+        toolset="research",
+        api="agent",
+        annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
+    )
+    async def resend_results(
+        call: Call,
+        run_id: Annotated[str | None, Field(description="A finished research run (any part of a big run sends the whole run).")] = None,
+        monitor_id: Annotated[str | None, Field(description="Or a monitor.")] = None,
+        monitor_run_id: Annotated[
+            str | None, Field(description="With monitor_id: which of its runs to send (default: its latest run that found something).")
+        ] = None,
+        webhook_id: Annotated[str | None, Field(description="Only this attached webhook (default: all of them).")] = None,
+    ) -> str:
+        """Ask the agent to deliver a run's or a monitor run's results to its webhooks again."""
+        if bool(run_id) == bool(monitor_id):
+            raise UserError("Give run_id (a research run) or monitor_id (a monitor), not both.")
+        if monitor_run_id and not monitor_id:
+            raise UserError("monitor_run_id goes with monitor_id; for a research run give run_id alone.")
+        if run_id:
+            path, target = f"/runs/{quote(run_id, safe='')}/webhooks/deliver", f"run {run_id}"
+            body = drop_none({"webhook_id": webhook_id})
+        else:
+            path, target = f"/monitors/{quote(monitor_id or '', safe='')}/webhooks/deliver", f"monitor {monitor_id}"
+            body = drop_none({"webhook_id": webhook_id, "run_id": monitor_run_id})
+        data = await call.client.post("agent", path, body)
+        sent = (data or {}).get("webhook_ids") or []
+        return (
+            f"Sending the results of {target} to {plural(len(sent), 'webhook')}"
+            + (f" ({', '.join(sent)})" if sent else "")
+            + ". It runs in the background; the outcome shows in the webhook history in the NewsCatcher Platform."
+        )
+
 
 async def wait_for_run(call: Call, ref: dict[str, Any], wait_seconds: float) -> dict[str, Any]:
     """Poll a run (or batch) until it ends or the wait runs out, reporting each phase as progress.
@@ -578,20 +691,44 @@ def render_run(d: dict[str, Any], offset: int, limit: int) -> str:
         lines.append(f"Batch progress: {batch_text(d['progress'])}")
     if d.get("error"):
         lines.append(f"Error: {d['error']}")
+    counts_line = company_counts_text(d)
+    if counts_line:
+        lines.append(counts_line)
     if status not in TERMINAL:
         if status == "queued":
             lines.append("Queued: the account runs a few research runs at a time, so this one starts when an earlier run finishes.")
-        eta = ETA["companies"] if d.get("kind") == "companies" else ETA.get(d.get("mode") or "", "runs take minutes")
+        if d.get("kind") == "companies":
+            eta = ETA["companies"]
+            if (d.get("company_counts") or {}).get("pending"):
+                lines.append(
+                    "Pending companies are queued for a free place (the account's other companies are being searched), not stuck."
+                )
+        else:
+            eta = ETA.get(d.get("mode") or "", "runs take minutes")
         lines.append(
             f"Still {status}. Call get_research again with wait_seconds=120–300 ({eta}); the table is not ready yet, so "
             "don't build it from other searches meanwhile. The run keeps going if you stop waiting and its results stay "
             "available by run_id: if you have to stop before it ends, tell the user it is still running and to say "
             '"refresh" for the results.'
+            + (
+                " A big company list taking an hour or more is normal: wait or refresh later rather than cancel."
+                if d.get("kind") == "companies"
+                else ""
+            )
         )
         return "\n".join(lines)
     if status == "cancelled":
         lines.append("The run was cancelled (not charged).")
         return "\n".join(lines)
+    if status == "failed":
+        lines.append(
+            "The run failed and was not charged. "
+            + (
+                "The news search did not work for it: try the same start_research call again in a few minutes."
+                if "search_failed" in str(d.get("error") or "") or "news search did not work" in str(d.get("error") or "")
+                else "Try the same start_research call again; if it fails again, change the request."
+            )
+        )
     rows: list[dict[str, Any]] = d.get("rows") or []
     companies = d.get("companies")
     if d.get("kind") == "companies" and isinstance(companies, list) and companies:
@@ -601,14 +738,28 @@ def render_run(d: dict[str, Any], offset: int, limit: int) -> str:
             for c in companies
         ]
         lines.append(f"Coverage: {' · '.join(cov[:30])}" + (f" · … {len(cov) - 30} more" if len(cov) > 30 else ""))
+        missing = [c for c in companies if c.get("news_status") in MISSING_NEWS]
+        if missing:
+            seen = sorted({c["news_status"] for c in missing}, key=list(MISSING_NEWS).index)
+            lines.append(
+                f"{plural(len(missing), 'company', 'companies')} got no news because the run did not finish them "
+                f"({'; '.join(f'{s}: {MISSING_NEWS[s]}' for s in seen)}). Their news is missing, not empty: offer to run "
+                f"them again with start_research(companies=[{', '.join(repr(c.get('domain')) for c in missing[:10])}"
+                + (", …" if len(missing) > 10 else "")
+                + "])."
+            )
+    if d.get("kind") == "companies" and (d.get("companies_failed") or 0) > 0 and not missing_in_list(d):
+        lines.append(
+            f"{plural(int(d['companies_failed']), 'company', 'companies')} failed (not charged): their news is missing, not "
+            "empty. Offer to run them again with start_research(companies=[…])."
+        )
     if d.get("report"):
         lines.append(f"Briefing:\n{clip(d['report'], 4000)}")
     if not rows:
-        lines.append(
-            "No rows: nothing qualified. Rephrase the query, widen the time window, or try mode=standard."
-            if status == "succeeded"
-            else "No rows."
-        )
+        if status == "succeeded" and d.get("kind") == "companies":
+            lines.append("No rows: no stories for these companies in the window" + (" (apart from the failed ones above)." if failed_any(d) else "."))
+        elif status == "succeeded":
+            lines.append("No rows: nothing qualified. Rephrase the query, widen the time window, or try mode=standard.")
     else:
         all_cols: list[str] = d.get("columns") or [k for k in rows[0] if k != "__n"]
         if d.get("kind") == "companies":
@@ -641,12 +792,76 @@ def render_run(d: dict[str, Any], offset: int, limit: int) -> str:
             + (f", monitor {k['monitor_id']}" if k.get("monitor_id") else "")
             + (f" ({schedule_text(k['schedule'])})" if k.get("schedule") else "")
             + (f": {k['error']}" if k.get("error") else "")
+            + (
+                "; its webhooks could not be attached, so add them to the monitor in the NewsCatcher Platform"
+                if k.get("webhooks_error")
+                else ""
+            )
         )
     elif d.get("monitor_id"):
         lines.append(f"Monitor: {d['monitor_id']}")
     if d.get("list_id"):
         lines.append(f"Company list: {d['list_id']}")
     return "\n".join(lines)
+
+
+def missing_in_list(d: dict[str, Any]) -> bool:
+    """Whether the run's ``companies`` list names a company that got no news because the run did not finish it.
+
+    Args:
+        d (dict[str, Any]): Run or batch detail.
+
+    Returns:
+        bool: True when at least one listed company has a ``MISSING_NEWS`` status.
+    """
+    companies = d.get("companies")
+    return isinstance(companies, list) and any(isinstance(c, dict) and c.get("news_status") in MISSING_NEWS for c in companies)
+
+
+def failed_any(d: dict[str, Any]) -> bool:
+    """Whether some company of a companies run failed, by ``companies_failed`` or, for older runs, the companies list.
+
+    Args:
+        d (dict[str, Any]): Run or batch detail.
+
+    Returns:
+        bool: True when at least one company failed or was not searched.
+    """
+    return (d.get("companies_failed") or 0) > 0 or missing_in_list(d)
+
+
+def company_counts_text(d: dict[str, Any]) -> str:
+    """One line from a companies run's (or batch's) ``company_counts``, ``companies_failed`` and ``outcome``.
+
+    Args:
+        d (dict[str, Any]): Run or batch detail.
+
+    Returns:
+        str: e.g. ``"Companies: 38 of 40 done: 31 found, 5 no news, 2 failed (not charged) · outcome: partial"``, or ""
+        when the API sent no counts (an older run or agent).
+    """
+    counts = d.get("company_counts")
+    if d.get("kind") != "companies" or not isinstance(counts, dict) or not counts:
+        return ""
+    n = {k: int(v or 0) for k, v in counts.items() if isinstance(v, (int, float))}
+    total = sum(n.values())
+    failed = int(d["companies_failed"]) if isinstance(d.get("companies_failed"), int) else sum(n.get(s, 0) for s in FAILED_NEWS)
+    pending, not_searched = n.get("pending", 0), n.get("not_searched", 0)
+    parts = [
+        f"{n.get('found', 0)} found",
+        f"{n.get('no_news', 0)} no news",
+        *([f"{failed} failed (not charged)"] if failed else []),
+        *([f"{not_searched} not searched"] if not_searched else []),
+        *([f"{pending} pending"] if pending else []),
+    ]
+    known = {"found", "no_news", "pending", "not_searched", *FAILED_NEWS}
+    parts += [f"{v} {k.replace('_', ' ')}" for k, v in n.items() if k not in known and v > 0]
+    outcome = d.get("outcome")
+    return (
+        f"Companies: {total - pending - not_searched} of {total} done: {', '.join(parts)}"
+        + (f" · outcome: {outcome}" if outcome else "")
+        + (" (some companies failed; the run still counts as succeeded)" if outcome == "partial" else "")
+    )
 
 
 def drop_rows(d: dict[str, Any], exclude: list[int] | None) -> dict[str, Any]:

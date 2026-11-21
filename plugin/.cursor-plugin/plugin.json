@@ -1,13 +1,14 @@
 {
   "name": "newscatcher",
   "displayName": "NewsCatcher",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "NewsCatcher for AI agents: search the news in every language, count and list every matching article, and run the NewsCatcher research agent to build verified event datasets, watch companies and keep them updated with monitors. Includes skills for briefings, company research, adverse media, sales triggers, event trackers, share of voice and more.",
   "author": {
     "name": "NewsCatcher",
     "url": "https://www.newscatcherapi.com"
   },
   "homepage": "https://www.newscatcherapi.com/docs",
+  "repository": "https://github.com/Newscatcher/newscatcher-mcp",
   "license": "MIT",
   "keywords": [
     "news",
@@ -17,5 +18,19 @@
     "monitoring",
     "mcp"
   ],
-  "skills": "./skills/"
+  "logo": "assets/logo.png",
+  "skills": "./skills/",
+  "variables": {
+    "type": "object",
+    "properties": {
+      "NEWSCATCHER_API_KEY": {
+        "type": "string",
+        "title": "NewsCatcher API key",
+        "description": "Your NewsCatcher API key. Create one at https://platform.newscatcherapi.com"
+      }
+    },
+    "required": [
+      "NEWSCATCHER_API_KEY"
+    ]
+  }
 }

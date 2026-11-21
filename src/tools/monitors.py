@@ -11,7 +11,7 @@ from src.config import Config
 from src.formatting import clip, plural, table, to_json, when
 from src.lenient import JsonText, TokenList
 from src.tools.common import Call, UserError, register
-from src.tools.params import CompanyItem, Schedule, drop_none, items, schedule_body, schedule_text, to_company_in
+from src.tools.params import CompanyItem, Schedule, WebhookIds, drop_none, items, schedule_body, schedule_text, to_company_in
 
 
 def render_monitor(m: dict[str, Any]) -> str:
@@ -111,6 +111,7 @@ def register_monitor_tools(mcp: FastMCP, config: Config) -> None:
         run_now: Annotated[
             bool, Field(description="Also run it right away (within ~5 minutes) instead of waiting for the schedule.")
         ] = False,
+        webhook_ids: WebhookIds = None,
     ) -> str:
         """Create a dataset or company monitor."""
         if sum(bool(x) for x in (from_run_id, companies, company_list_id)) != 1:
@@ -131,6 +132,7 @@ def register_monitor_tools(mcp: FastMCP, config: Config) -> None:
                 "query": query,
                 "schedule": schedule_body(schedule),
                 "settings": {"include_market_activity": include_market_activity} if include_market_activity is not None else None,
+                "webhook_ids": webhook_ids or None,
             }
         )
         m = await call.client.post("agent", "/monitors", body)
@@ -138,6 +140,8 @@ def register_monitor_tools(mcp: FastMCP, config: Config) -> None:
         if run_now:
             await call.client.post("agent", f"/monitors/{quote(m['monitor_id'], safe='')}/run", {})
             tail = "\nRunning now (starts within ~5 minutes). Check it with get_monitor_updates."
+        if webhook_ids:
+            tail += f"\nEach run's new results also go to {plural(len(webhook_ids), 'webhook')}."
         return f"Created monitor {render_monitor(m)}{tail}"
 
     @register(
