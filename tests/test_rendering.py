@@ -74,6 +74,50 @@ def test_companies_without_news_from_an_error_are_explained():
     assert "did not finish" not in found
 
 
+def test_partial_company_run_summarizes_counts_and_offers_a_rerun():
+    t = render_run({"run_id": "r", "kind": "companies", "status": "succeeded", "outcome": "partial", "companies_failed": 2,
+                    "company_counts": {"found": 31, "no_news": 5, "out_of_time": 1, "internal_error": 1},
+                    "companies": [{"company": "Apple", "domain": "apple.com", "news_status": "out_of_time"},
+                                  {"company": "Meta", "domain": "meta.com", "news_status": "internal_error"}], "rows": []}, 0, 25)
+    assert "Companies: 38 of 38 done: 31 found, 5 no news, 2 failed (not charged) · outcome: partial" in t
+    assert "the run still counts as succeeded" in t
+    assert "start_research(companies=['apple.com', 'meta.com'])" in t
+    assert "apart from the failed ones" in t and "Rephrase" not in t
+    # companies_failed is enough to explain missing news when the companies list does not show them
+    t = render_run({"run_id": "r", "kind": "companies", "status": "succeeded", "outcome": "partial", "companies_failed": 1,
+                    "company_counts": {"found": 1, "model_unavailable": 1}, "rows": []}, 0, 25)
+    assert "1 company failed (not charged): their news is missing" in t
+
+
+def test_complete_company_run_has_no_rerun_advice():
+    t = render_run({"run_id": "r", "kind": "companies", "status": "succeeded", "outcome": "complete", "companies_failed": 0,
+                    "company_counts": {"found": 3, "no_news": 1}, "rows": [],
+                    "companies": [{"company": "Wise", "domain": "wise.com", "news_status": "no_news", "stories": 0}]}, 0, 25)
+    assert "Companies: 4 of 4 done: 3 found, 1 no news · outcome: complete" in t
+    assert "failed" not in t and "run them again" not in t
+
+
+def test_running_batch_has_no_outcome_and_pending_companies_are_queued():
+    t = render_run({"batch_id": "b1", "kind": "companies", "status": "running", "outcome": None, "companies_failed": 0,
+                    "company_counts": {"found": 20, "no_news": 2, "pending": 38}}, 0, 25)
+    assert "Companies: 22 of 60 done: 20 found, 2 no news, 38 pending" in t
+    assert "outcome" not in t
+    assert "queued for a free place" in t and "rather than cancel" in t
+
+
+def test_company_run_without_counts_falls_back():
+    t = render_run({"run_id": "r", "kind": "companies", "status": "succeeded", "rows": [],
+                    "companies": [{"company": "Wise", "domain": "wise.com", "news_status": "no_news", "stories": 0}]}, 0, 25)
+    assert "Companies:" not in t and "Coverage: Wise (wise.com): no_news" in t
+
+
+def test_failed_run_suggests_retrying_not_rephrasing():
+    t = render_run({"run_id": "r", "kind": "events", "mode": "standard", "status": "failed", "rows": [],
+                    "error": "search_failed: The news search did not work for this run, so nothing was researched."}, 0, 25)
+    assert "not charged" in t and "again in a few minutes" in t
+    assert "Rephrase" not in t and "No rows" not in t
+
+
 def test_batch_progress_in_words():
     t = render_run({"batch_id": "b1", "kind": "companies", "status": "running",
                     "progress": {"runs_done": 1, "runs_total": 3, "companies_done": 20, "companies_total": 60}}, 0, 25)
@@ -135,3 +179,16 @@ def test_api_urls_from_split_env_vars(monkeypatch):
     monkeypatch.setenv("NEWSCATCHER_NEWS_API_URL", "https://dev-api.example.com")
     with pytest.raises(ValueError, match="bare host"):
         load_config()
+
+
+def test_keep_updated_webhook_error():
+    t = render_run({"run_id": "r", "kind": "events", "mode": "fast", "status": "succeeded", "rows": [],
+                    "keep_updated": {"status": "created", "monitor_id": "m1", "webhooks_error": "unavailable"}}, 0, 25)
+    assert "its webhooks could not be attached" in t
+
+
+def test_company_counts_name_unlisted_statuses():
+    d = {"run_id": "r", "kind": "companies", "status": "succeeded", "rows": [], "outcome": "complete",
+         "company_counts": {"found": 1, "no_news": 1, "incomplete": 1}, "companies_failed": 0}
+    t = render_run(d, 0, 25)
+    assert "Companies: 3 of 3 done: 1 found, 1 no news, 1 incomplete · outcome: complete" in t

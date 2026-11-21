@@ -283,3 +283,16 @@ def drop_none(body: dict[str, object]) -> dict[str, object]:
         dict[str, object]: The same dict without None values.
     """
     return {k: v for k, v in body.items() if v is not None}
+
+
+# Webhooks are set up in the NewsCatcher Platform (Webhooks page); the agent API takes their ids but cannot list them.
+WebhookIds = Annotated[
+    items(Annotated[str, Field(min_length=1, max_length=64)], max_length=20) | None,  # type: ignore[operator]
+    TokenList,
+    Field(
+        description=(
+            "Also send the results to these webhooks (up to 20): ids of the user's webhooks from the NewsCatcher "
+            "Platform's Webhooks page. Leave out for none."
+        )
+    ),
+]

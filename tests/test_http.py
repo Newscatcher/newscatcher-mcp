@@ -76,7 +76,7 @@ def test_tools_query_param_picks_toolsets(http):
     _, body = rpc(http, {"jsonrpc": "2.0", "id": 3, "method": "tools/list"}, {"x-api-key": "k"}, path="/mcp?tools=news")
     assert [t["name"] for t in body["result"]["tools"]] == ["search_news", "list_articles", "count_articles", "get_story", "get_account"]
     _, body = rpc(http, {"jsonrpc": "2.0", "id": 4, "method": "tools/list"}, {"x-api-key": "k"})
-    assert len(body["result"]["tools"]) == 15
+    assert len(body["result"]["tools"]) == 16
 
 
 def test_client_query_param_tags_user_agent(http, respx_mock):

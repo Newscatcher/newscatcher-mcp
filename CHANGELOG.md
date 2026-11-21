@@ -13,6 +13,38 @@
   `<deployment>` placeholder, with a note to swap in your own URL when self-hosting. The intro mentions sign-in
   alongside API keys.
 
+## [0.3.0] - 2026-11-20
+
+### Added
+- Webhooks. `start_research` and `create_monitor` take `webhook_ids` (up to 20, from the NewsCatcher Platform's
+  Webhooks page) and send them as the Agent API's `webhook_ids`; the monitor `keep_updated` creates gets the run's
+  webhooks. `dry_run` and the start message say where the results go. A run whose monitor could not get its
+  webhooks says so (`keep_updated.webhooks_error`).
+- `resend_results` tool: sends a finished run's, or a monitor run's, results to its webhooks again
+  (`POST /runs/{id}/webhooks/deliver`, `POST /monitors/{id}/webhooks/deliver`), to all of them or one `webhook_id`.
+- Error advice for the webhook codes (`webhook_not_found`, `webhook_not_allowed`, `too_many_webhooks`,
+  `webhook_not_attached`, `no_webhooks`, `nothing_to_send`, `run_in_progress`, `resend_too_soon`, `not_allowed`),
+  where the status alone would be explained wrongly (a 403 read as a plan limit, a 409 read as "still running").
+- Instructions: one line on webhooks.
+
+### Fixed
+- A 429 `resend_too_soon` is not retried: the resend is allowed once a minute per webhook, so a retry cannot succeed.
+
+### Changed
+- `get_research` on a company run (or batch) starts with a summary from the API's `company_counts`,
+  `companies_failed` and `outcome`, e.g. "38 of 40 done: 31 found, 5 no news, 2 failed (not charged) · outcome:
+  partial", and notes that a partial run still counts as succeeded. `companies_failed` alone is enough to explain
+  missing news and offer a rerun. Runs without these fields render as before.
+- Company run timing follows the account's company queue (about 3 companies at a time across all of an account's
+  company runs and monitors): new time text, and `start_research(dry_run=true)` estimates the time from the number
+  of companies and says that starting several company runs at once is not faster.
+- While a company run is going, pending companies are described as queued for a free place, not stuck, and a long
+  wait for a big list is called normal (wait or refresh, rather than cancel).
+- A failed run says it was not charged and to try again (in a few minutes when the news search did not work),
+  instead of "No rows". A company run with no rows no longer suggests rephrasing or `mode=standard`.
+- Skills: `company-watchlist` timing; `agent-api-integration` documents `company_counts`, `companies_failed`,
+  `outcome`, webhooks and resend; `news-alerts-integration` offers Platform webhooks before polling code.
+
 ## [0.2.1] - 2026-11-16
 
 ### Changed

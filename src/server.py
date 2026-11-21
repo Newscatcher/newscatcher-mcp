@@ -34,6 +34,7 @@ Pick the tool by the question:
 - Recent news about specific companies (a watchlist, portfolio, accounts, competitors): start_research with companies or a company_list_id.
 - Keep any of these updated on a schedule: start_research(keep_updated=true) or create_monitor; read results with get_monitor_updates.
 - Reusable sets of companies: save_company_list, get_company_list, edit_company_list.
+- Send results to the user's webhooks: webhook_ids on start_research or create_monitor (ids from the NewsCatcher Platform's Webhooks page; ask, never invent); resend_results sends them again.
 - Credits, limits, plan: get_account.
 
 Dates: "this week" = Monday to now, "last week" = the previous Monday–Sunday, "last month" = the previous calendar month (UTC); a window without an end ends today. Say the exact dates you used.

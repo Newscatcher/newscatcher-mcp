@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "NewsCatcher news search and research agent for Cursor: the hosted MCP server plus use-case skills.",
-    "version": "0.2.0"
+    "version": "0.3.0"
   },
   "plugins": [
     {

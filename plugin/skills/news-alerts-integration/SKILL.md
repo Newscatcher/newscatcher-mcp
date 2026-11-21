@@ -22,8 +22,10 @@ Uses the REST APIs directly; set `NEWSCATCHER_API_KEY` in the environment (never
 | A research table | `create_monitor(from_run_id=…)` | GET `/monitors/runs/{run_id}`: `rows[]` with `change` = new or update |
 | Keywords | nothing | POST `/news-api/articles` with `from_date` = last check, `sort_by="published_at"` |
 
-The Agent API has no push webhooks: poll on the monitor's schedule (a little after its run time) and remember the last
-run id you processed.
+No code needed for push: add a webhook (HTTP endpoint, Slack or Teams) on the NewsCatcher Platform's Webhooks page and
+pass its id as `webhook_ids` to `create_monitor` (or POST `/monitors`); every run that finds something new is sent to it
+(`agent_monitor_results_ready`). Write code when the user wants their own formatting, dedup or destination: poll on the
+monitor's schedule (a little after its run time) and remember the last run id you processed.
 
 ## Code (Python, Slack)
 ```python
