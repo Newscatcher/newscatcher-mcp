@@ -13,9 +13,15 @@
   `<deployment>` placeholder, with a note to swap in your own URL when self-hosting. The intro mentions sign-in
   alongside API keys.
 
-## [0.3.0] - 2026-11-20
+## [0.3.0] - 2026-11-23
+
+Needs Agent API 1.17.0.
 
 ### Added
+- Search and paging when listing monitors and company lists. `get_monitor` and `get_company_list` take `search`
+  (name or topic; for lists also a company's name or domain, so "which list has Stripe?"), `limit` (up to 100 a
+  page) and `cursor`, sent as the Agent API's `q`, `limit` and `cursor`. A paged listing ends with "Showing N of
+  total" and the next cursor. Without them the listing is unchanged.
 - Webhooks. `start_research` and `create_monitor` take `webhook_ids` (up to 20, from the NewsCatcher Platform's
   Webhooks page) and send them as the Agent API's `webhook_ids`; the monitor `keep_updated` creates gets the run's
   webhooks. `dry_run` and the start message say where the results go. A run whose monitor could not get its

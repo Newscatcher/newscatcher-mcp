@@ -38,7 +38,8 @@ Runs on the NewsCatcher MCP tools (`save_company_list`, `get_company_list`, `edi
    and will appear there within minutes.
 
 ## Existing watchlist
-- Find it: `get_monitor()` lists monitors; `get_company_list()` lists saved lists.
+- Find it: `get_monitor()` lists monitors; `get_company_list()` lists saved lists. Many of them: `get_monitor(search="<name or topic>")`,
+  `get_company_list(search="<list name or company domain>")`.
 - What's new: `get_monitor_updates(monitor_id=<id>)` is the latest delivery, each story marked new or update.
   The full recent feed: `get_monitor_updates(monitor_id=<id>, feed=true, days=7)`.
 - Change it: `update_monitor(monitor_id=<id>, action="edit", query=<new focus>)` or `schedule={…}`;

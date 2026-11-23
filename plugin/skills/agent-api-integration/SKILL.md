@@ -21,10 +21,11 @@ Base URL `https://api.newscatcherapi.com/agent` (define it once as a constant an
 | Batches | `GET /batches/{id}` | `progress {runs_done, runs_total, companies_done, companies_total}`; same export paths |
 | Company list | `POST /companies/lists {name, companies, list_id?}` | `companies`: `[{"domain": "stripe.com"}]`; resolution runs in the background (`status: resolving`) |
 | Upload a file | `POST /companies/lists/upload` | multipart: `file` (.csv, .xlsx, .json or .txt with one company domain per line or row) and optional `name`, `list_id`; the response lists lines that gave no company |
+| List lists | `GET /companies/lists?q=stripe&limit=50` | `q` matches list names and the companies in them; with `limit` the answer is `{lists, next_cursor, total}`, without it a plain array |
 | List status | `GET /companies/lists/{id}` | `status`: resolving → ready, plus a status per company; a run started on a resolving list waits for it |
 | Add / fix | `POST /companies/lists/{id}/companies {companies}` · `PATCH /companies/lists/{id}/companies/{domain}` | |
 | Monitor | `POST /monitors {kind, …}` | `kind: "companies"` with `companies` or `list_id` (+ `query`), or `kind: "dataset"` with `from_run_id` |
-| List monitors | `GET /monitors` · `GET /monitors/{id}` | settings, schedule, `next_run_at`, `last_run_id` |
+| List monitors | `GET /monitors` · `GET /monitors/{id}` | settings, schedule, `next_run_at`, `last_run_id`; `?q=&limit=&cursor=` searches and pages (`next_cursor`, `total`) |
 | Deliveries | `GET /monitors/{id}/stories?days=7` (companies) · `GET /monitors/{id}/rows` (dataset) | or per run: `GET /monitors/{id}/runs` → `GET /monitors/runs/{run_id}` |
 | Pause / resume | `PATCH /monitors/{id} {"enabled": false}` · `{"enabled": true, "fill_gap": true}` | `POST /monitors/{id}/run` runs it now |
 | Webhooks | `"webhook_ids": [...]` on `POST /runs`, `POST /monitors` (and `keep_updated.webhook_ids`, default the run's) | ids from the Platform's Webhooks page; results arrive as `agent_run_completed` / `agent_monitor_results_ready` |

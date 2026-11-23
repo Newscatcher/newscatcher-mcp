@@ -586,3 +586,35 @@ async def test_webhook_refusals_get_their_own_advice(setup):
     text, _ = await h.call("resend_results", {"run_id": "r1"})
     assert "No webhooks are attached" in text and "still going" not in text
 
+
+
+# ---------------------------------------------------------------- search and paging (Agent API 1.17.0)
+
+
+async def test_monitor_and_list_search_and_paging(setup):
+    def responder(c):
+        if c.url.split("?")[0].endswith("/monitors"):
+            return {"json": {"monitors": [{"monitor_id": "m1", "kind": "companies", "name": "Fintech", "companies": [{"domain": "a.com"}],
+                                           "enabled": False}], "next_cursor": "c2", "total": 7}}
+        return {"json": {"lists": [{"list_id": "l1", "name": "Banks", "count": 3, "status": "ready"}], "next_cursor": None, "total": 1}}
+
+    h = setup(responder)
+    text, _ = await h.call("get_monitor", {"search": "fintech", "limit": 1})
+    assert h.calls[0].params == {"q": "fintech", "limit": "1"}
+    assert 'Showing 1 of 7. Next page: cursor="c2"' in text
+    await h.call("get_monitor", {"cursor": "c2", "limit": 1})
+    assert h.calls[1].params == {"limit": "1", "cursor": "c2"}
+    text, _ = await h.call("get_company_list", {"search": "stripe.com", "limit": 20})
+    assert h.calls[2].params == {"q": "stripe.com", "limit": "20"}
+    assert '"Banks"' in text and "Next page" not in text
+    await h.call("get_monitor", {})
+    await h.call("get_company_list", {})
+    assert not h.calls[3].params and not h.calls[4].params  # the plain listing sends no paging
+
+
+async def test_search_with_no_match_says_so(setup):
+    h = setup(lambda c: {"json": {"monitors": [], "next_cursor": None, "total": 0}} if "/monitors" in c.url else {"json": []})
+    text, _ = await h.call("get_monitor", {"search": "nothing"})
+    assert text == 'No monitors match "nothing".'
+    text, _ = await h.call("get_company_list", {"search": "nothing"})
+    assert text == 'No company lists match "nothing".'
