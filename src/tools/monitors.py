@@ -11,7 +11,21 @@ from src.config import Config
 from src.formatting import clip, plural, table, to_json, when
 from src.lenient import JsonText, TokenList
 from src.tools.common import Call, UserError, register
-from src.tools.params import CompanyItem, Schedule, drop_none, items, schedule_body, schedule_text, to_company_in
+from src.tools.params import (
+    CompanyItem,
+    Cursor,
+    PageSize,
+    Schedule,
+    Search,
+    WebhookIds,
+    drop_none,
+    items,
+    page_note,
+    page_params,
+    schedule_body,
+    schedule_text,
+    to_company_in,
+)
 
 
 def render_monitor(m: dict[str, Any]) -> str:
@@ -111,6 +125,7 @@ def register_monitor_tools(mcp: FastMCP, config: Config) -> None:
         run_now: Annotated[
             bool, Field(description="Also run it right away (within ~5 minutes) instead of waiting for the schedule.")
         ] = False,
+        webhook_ids: WebhookIds = None,
     ) -> str:
         """Create a dataset or company monitor."""
         if sum(bool(x) for x in (from_run_id, companies, company_list_id)) != 1:
@@ -131,6 +146,7 @@ def register_monitor_tools(mcp: FastMCP, config: Config) -> None:
                 "query": query,
                 "schedule": schedule_body(schedule),
                 "settings": {"include_market_activity": include_market_activity} if include_market_activity is not None else None,
+                "webhook_ids": webhook_ids or None,
             }
         )
         m = await call.client.post("agent", "/monitors", body)
@@ -138,6 +154,8 @@ def register_monitor_tools(mcp: FastMCP, config: Config) -> None:
         if run_now:
             await call.client.post("agent", f"/monitors/{quote(m['monitor_id'], safe='')}/run", {})
             tail = "\nRunning now (starts within ~5 minutes). Check it with get_monitor_updates."
+        if webhook_ids:
+            tail += f"\nEach run's new results also go to {plural(len(webhook_ids), 'webhook')}."
         return f"Created monitor {render_monitor(m)}{tail}"
 
     @register(
@@ -145,7 +163,10 @@ def register_monitor_tools(mcp: FastMCP, config: Config) -> None:
         config,
         name="get_monitor",
         title="Get monitors",
-        description="Show one monitor (settings, schedule, state and its recent runs), or with no monitor_id, all your monitors. Free.",
+        description=(
+            "Show one monitor (settings, schedule, state and its recent runs), or with no monitor_id, all your monitors; "
+            "search finds them by name or topic. Free."
+        ),
         toolset="monitors",
         api="agent",
         annotations={"readOnlyHint": True, "idempotentHint": True},
@@ -153,17 +174,22 @@ def register_monitor_tools(mcp: FastMCP, config: Config) -> None:
     async def get_monitor(
         call: Call,
         monitor_id: Annotated[str | None, Field(description="The monitor; leave out to list all.")] = None,
+        search: Search = None,
+        limit: PageSize = None,
+        cursor: Cursor = None,
         format: Literal["text", "json"] = "text",
     ) -> str:
         """Show one monitor or all monitors."""
         if not monitor_id:
-            data = await call.client.get("agent", "/monitors")
+            data = await call.client.get("agent", "/monitors", page_params(search, limit, cursor))
             if format == "json":
                 return to_json(data)
             ms = (data or {}).get("monitors") or []
+            if not ms and (search or cursor):
+                return f'No monitors match "{search}".' if search else "No more monitors."
             if not ms:
                 return "No monitors yet. Create one with create_monitor, or start_research(keep_updated=true)."
-            return "\n".join(f"- {render_monitor(m)}" for m in ms)
+            return "\n".join(f"- {render_monitor(m)}" for m in ms) + page_note(data, len(ms))
         mid = quote(monitor_id, safe="")
         m, runs = await asyncio.gather(
             call.client.get("agent", f"/monitors/{mid}"),

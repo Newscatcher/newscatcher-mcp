@@ -32,13 +32,14 @@ Runs on the NewsCatcher MCP tools (`save_company_list`, `get_company_list`, `edi
    Daily: `keep_updated={"every": "day", "at": "08:00", "tz": "America/New_York"}`. A one-off look with no ongoing
    watch: leave out `keep_updated`. The monitor is created when this run succeeds and from then on delivers only
    stories newer than the baseline (or stories that grew).
-3. `get_research(run_id, wait_seconds=300, sort="importance")` until it finishes (about 2–4 minutes per 6 companies). If you must stop
+3. `get_research(run_id, wait_seconds=300, sort="importance")` until it finishes (about 3 companies at a time per account, typically 1–2 minutes per company; a big list can take an hour or more, which is normal). If you must stop
    first, give the run id and ask the user to say "refresh". The finished run shows the monitor id under "Keep updated";
    if it still says pending, call `get_monitor()` once: report the monitor id and next run, or say it is being created
    and will appear there within minutes.
 
 ## Existing watchlist
-- Find it: `get_monitor()` lists monitors; `get_company_list()` lists saved lists.
+- Find it: `get_monitor()` lists monitors; `get_company_list()` lists saved lists. Many of them: `get_monitor(search="<name or topic>")`,
+  `get_company_list(search="<list name or company domain>")`.
 - What's new: `get_monitor_updates(monitor_id=<id>)` is the latest delivery, each story marked new or update.
   The full recent feed: `get_monitor_updates(monitor_id=<id>, feed=true, days=7)`.
 - Change it: `update_monitor(monitor_id=<id>, action="edit", query=<new focus>)` or `schedule={…}`;

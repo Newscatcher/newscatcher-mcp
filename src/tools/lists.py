@@ -10,7 +10,7 @@ from src.config import Config
 from src.formatting import clip, plural, to_json, when
 from src.lenient import ItemList, JsonText, TokenList
 from src.tools.common import Call, UserError, register
-from src.tools.params import CompanyItem, drop_none, items, to_company_in
+from src.tools.params import CompanyItem, Cursor, PageSize, Search, drop_none, items, page_note, page_params, to_company_in
 
 
 def render_list(d: dict[str, Any], max_companies: int = 60) -> str:
@@ -121,7 +121,7 @@ def register_list_tools(mcp: FastMCP, config: Config) -> None:
         title="Get company lists",
         description=(
             "Show one saved company list with each company's identification status (ready, resolving, not_found…), or with "
-            "no list_id, all your lists. Free."
+            "no list_id, all your lists. search finds lists by name or by a company in them (\"which list has Stripe?\"). Free."
         ),
         toolset="lists",
         api="agent",
@@ -130,21 +130,29 @@ def register_list_tools(mcp: FastMCP, config: Config) -> None:
     async def get_company_list(
         call: Call,
         list_id: Annotated[str | None, Field(description="The list to show; leave out to list all lists.")] = None,
+        search: Annotated[
+            str | None,
+            Field(max_length=200, description="When listing: only lists whose name, or a company's name or domain, contains this text."),
+        ] = None,
+        limit: PageSize = None,
+        cursor: Cursor = None,
         format: Literal["text", "json"] = "text",
     ) -> str:
         """Show one list or all lists."""
         if not list_id:
-            data = await call.client.get("agent", "/companies/lists")
+            data = await call.client.get("agent", "/companies/lists", page_params(search, limit, cursor))
             lists = data if isinstance(data, list) else (data or {}).get("lists") or []
             if format == "json":
-                return to_json(lists)
+                return to_json(data if isinstance(data, dict) else lists)  # a page keeps next_cursor and total
+            if not lists and (search or cursor):
+                return f'No company lists match "{search}".' if search else "No more company lists."
             if not lists:
                 return "No company lists yet. Create one with save_company_list."
             return "\n".join(
                 f"- {lst.get('list_id')} · \"{lst.get('name')}\" · {plural(int(lst.get('count') or 0), 'company', 'companies')} · "
                 f"{lst.get('status')} · updated {when(lst.get('updated_at'))}"
                 for lst in lists
-            )
+            ) + page_note(data, len(lists))
         data = await call.client.get("agent", f"/companies/lists/{quote(list_id, safe='')}")
         return to_json(data) if format == "json" else render_list(data or {})
 

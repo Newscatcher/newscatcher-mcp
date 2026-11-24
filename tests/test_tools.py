@@ -23,7 +23,7 @@ BANNED = [
 ]
 TOOLS = [
     "search_news", "list_articles", "count_articles", "get_story", "get_account",
-    "start_research", "get_research", "cancel_research",
+    "start_research", "get_research", "cancel_research", "resend_results",
     "save_company_list", "get_company_list", "edit_company_list",
     "create_monitor", "get_monitor", "get_monitor_updates", "update_monitor",
 ]
@@ -37,7 +37,7 @@ async def list_tools(mcp):
 # ---------------------------------------------------------------- tool surface
 
 
-async def test_registers_the_15_hosted_tools():
+async def test_registers_the_16_hosted_tools():
     tools = await list_tools(build_server(load_config()))
     assert [t.name for t in tools] == TOOLS
 
@@ -419,7 +419,8 @@ async def test_dry_run_counts_saved_list_and_prices_the_monitor(setup):
     h = setup(lambda c: {"json": {"list_id": "l1", "count": 60}} if "/companies/lists/" in c.url else {"json": {"credits_balance": 1_000_000}})
     text, _ = await h.call("start_research", {"company_list_id": "l1", "keep_updated": True, "dry_run": True})
     for s in ("company news for 60 companies", "run as a batch", "30,000 credits for 60 companies",
-              "180,000 credits a month", "Query check: no issues found"):
+              "180,000 credits a month", "Query check: no issues found", "about 1–2 hours for 60 companies",
+              "3 companies at a time per account", "does not make them faster"):
         assert s in text
     assert "$" not in text
 
@@ -532,3 +533,88 @@ def test_403_for_a_key_of_another_product_gets_no_plan_hint():
     other = ApiError(403, "This API key belongs to another NewsCatcher product and cannot be used with the News API.")
     assert error_hint(other, "news") == ""
     assert "plan does not include" in error_hint(ApiError(403, "Forbidden"), "news")
+
+
+# ---------------------------------------------------------------- webhooks
+
+
+async def test_start_research_sends_webhook_ids_and_dry_run_mentions_them(setup):
+    h = setup(lambda c: {"status": 202, "json": {"run_id": "r1", "status": "queued", "kind": "events"}})
+    text, _ = await h.call("start_research", {"query": "Bank M&A since Oct 1", "webhook_ids": ["w1", "w2"], "keep_updated": True})
+    assert h.calls[0].body["webhook_ids"] == ["w1", "w2"]
+    assert h.calls[0].body["keep_updated"] == {}  # the monitor gets the run's webhooks by default
+    assert "Results go to 2 webhooks" in text
+    await h.call("start_research", {"query": "Bank M&A since Oct 1"})
+    assert "webhook_ids" not in h.calls[1].body
+    h = setup(lambda c: {"json": {"credits_balance": 10_000}})
+    text, _ = await h.call("start_research", {"query": "Bank M&A since Oct 1", "webhook_ids": "w1", "dry_run": True})
+    assert all(c.method == "GET" for c in h.calls)
+    assert "Webhooks: the results go to 1 webhook when the run succeeds" in text
+
+
+async def test_create_monitor_sends_webhook_ids(setup):
+    h = setup(lambda c: {"json": {"monitor_id": "m1", "kind": "companies", "name": "W", "companies": [{"domain": "a.com"}], "enabled": True}})
+    text, _ = await h.call("create_monitor", {"companies": ["a.com"], "webhook_ids": ["w1"]})
+    assert h.calls[0].body["webhook_ids"] == ["w1"]
+    assert "also go to 1 webhook" in text
+
+
+async def test_resend_results_for_runs_and_monitors(setup):
+    h = setup(lambda c: {"status": 202, "json": {"webhook_ids": ["w1"]}})
+    text, err = await h.call("resend_results", {"run_id": "r1"})
+    assert not err and h.calls[0].url.endswith("/agent/runs/r1/webhooks/deliver") and h.calls[0].body == {}
+    assert "Sending the results of run r1 to 1 webhook (w1)" in text
+    await h.call("resend_results", {"monitor_id": "m1", "monitor_run_id": "mr1", "webhook_id": "w1"})
+    assert h.calls[1].url.endswith("/agent/monitors/m1/webhooks/deliver")
+    assert h.calls[1].body == {"webhook_id": "w1", "run_id": "mr1"}
+    _, err = await h.call("resend_results", {"run_id": "r1", "monitor_id": "m1"})
+    assert err and len(h.calls) == 2
+
+
+async def test_resend_too_soon_is_not_retried(setup):
+    h = setup(lambda c: {"status": 429, "json": {"code": "resend_too_soon", "message": "Sent less than a minute ago."}})
+    text, err = await h.call("resend_results", {"run_id": "r1"})
+    assert err and len(h.calls) == 1
+    assert "Do not resend now" in text and "Rate limited" not in text
+
+
+async def test_webhook_refusals_get_their_own_advice(setup):
+    h = setup(lambda c: {"status": 403, "json": {"code": "webhook_not_allowed", "message": "Not your workspace's webhook."}})
+    text, err = await h.call("start_research", {"query": "Bank M&A since Oct 1", "webhook_ids": ["w9"]})
+    assert err and "Nothing was created or charged" in text and "plan does not include" not in text
+    h = setup(lambda c: {"status": 409, "json": {"code": "no_webhooks", "message": "No webhooks attached."}})
+    text, _ = await h.call("resend_results", {"run_id": "r1"})
+    assert "No webhooks are attached" in text and "still going" not in text
+
+
+
+# ---------------------------------------------------------------- search and paging (Agent API 1.17.0)
+
+
+async def test_monitor_and_list_search_and_paging(setup):
+    def responder(c):
+        if c.url.split("?")[0].endswith("/monitors"):
+            return {"json": {"monitors": [{"monitor_id": "m1", "kind": "companies", "name": "Fintech", "companies": [{"domain": "a.com"}],
+                                           "enabled": False}], "next_cursor": "c2", "total": 7}}
+        return {"json": {"lists": [{"list_id": "l1", "name": "Banks", "count": 3, "status": "ready"}], "next_cursor": None, "total": 1}}
+
+    h = setup(responder)
+    text, _ = await h.call("get_monitor", {"search": "fintech", "limit": 1})
+    assert h.calls[0].params == {"q": "fintech", "limit": "1"}
+    assert 'Showing 1 of 7. Next page: cursor="c2"' in text
+    await h.call("get_monitor", {"cursor": "c2", "limit": 1})
+    assert h.calls[1].params == {"limit": "1", "cursor": "c2"}
+    text, _ = await h.call("get_company_list", {"search": "stripe.com", "limit": 20})
+    assert h.calls[2].params == {"q": "stripe.com", "limit": "20"}
+    assert '"Banks"' in text and "Next page" not in text
+    await h.call("get_monitor", {})
+    await h.call("get_company_list", {})
+    assert not h.calls[3].params and not h.calls[4].params  # the plain listing sends no paging
+
+
+async def test_search_with_no_match_says_so(setup):
+    h = setup(lambda c: {"json": {"monitors": [], "next_cursor": None, "total": 0}} if "/monitors" in c.url else {"json": []})
+    text, _ = await h.call("get_monitor", {"search": "nothing"})
+    assert text == 'No monitors match "nothing".'
+    text, _ = await h.call("get_company_list", {"search": "nothing"})
+    assert text == 'No company lists match "nothing".'

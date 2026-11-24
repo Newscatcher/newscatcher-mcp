@@ -283,3 +283,58 @@ def drop_none(body: dict[str, object]) -> dict[str, object]:
         dict[str, object]: The same dict without None values.
     """
     return {k: v for k, v in body.items() if v is not None}
+
+
+# Webhooks are set up in the NewsCatcher Platform (Webhooks page); the agent API takes their ids but cannot list them.
+WebhookIds = Annotated[
+    items(Annotated[str, Field(min_length=1, max_length=64)], max_length=20) | None,  # type: ignore[operator]
+    TokenList,
+    Field(
+        description=(
+            "Also send the results to these webhooks (up to 20): ids of the user's webhooks from the NewsCatcher "
+            "Platform's Webhooks page. Leave out for none."
+        )
+    ),
+]
+
+
+# Search and paging on the list modes of get_monitor and get_company_list (Agent API 1.17.0: q, limit, cursor).
+Search = Annotated[
+    str | None,
+    Field(max_length=200, description="When listing: only those whose name or topic contains this text (any case)."),
+]
+PageSize = Annotated[
+    int | None, Field(ge=1, le=100, description="When listing: at most this many per page; leave out for all.")
+]
+Cursor = Annotated[str | None, Field(description="When listing: the cursor a previous page gave, for the next page.")]
+
+
+def page_params(search: str | None, limit: int | None, cursor: str | None) -> dict[str, object] | None:
+    """Query parameters for a searched or paged listing.
+
+    Args:
+        search (str | None): Text to match (sent as ``q``).
+        limit (int | None): Page size.
+        cursor (str | None): ``next_cursor`` of the previous page.
+
+    Returns:
+        dict[str, object] | None: The parameters, or None when none is set (the plain listing).
+    """
+    params = drop_none({"q": (search or "").strip() or None, "limit": limit, "cursor": cursor or None})
+    return params or None
+
+
+def page_note(data: object, shown: int) -> str:
+    """The line under a paged listing: how many of the total are shown and how to get the next page.
+
+    Args:
+        data (object): The API answer (a page carries ``total`` and ``next_cursor``; a plain array carries neither).
+        shown (int): How many items this page shows.
+
+    Returns:
+        str: e.g. ``'\nShowing 20 of 57. Next page: cursor="abc"'``, or "" when everything is shown.
+    """
+    if not isinstance(data, dict) or not data.get("next_cursor"):
+        return ""
+    total = data.get("total")
+    return f"\nShowing {shown}" + (f" of {total}" if isinstance(total, int) else "") + f'. Next page: cursor="{data["next_cursor"]}"'

@@ -96,6 +96,7 @@ end-to-end eval (37 of the 39 critical-skill test prompts at 4+ of 5 with Claude
 | research | `start_research` | Research agent run: events dataset or company news; `dry_run` estimates cost free | per run |
 | research | `get_research` | Wait for a run and show its table; list runs | free |
 | research | `cancel_research` | Stop a run (not charged) | free |
+| research | `resend_results` | Send a run's or monitor run's results to its webhooks again | free |
 | lists | `save_company_list` / `get_company_list` / `edit_company_list` | Reusable company lists | free |
 | monitors | `create_monitor` / `get_monitor` / `get_monitor_updates` / `update_monitor` | Scheduled updates, only what is new | per run / per company |
 
@@ -107,6 +108,9 @@ instructions tell models so; some skills mention them for local setups.
 
 `get_research` also takes `exclude_rows` (leave out rows after checking; counts cover the kept rows) and
 `sort` (`newest`, `oldest`, `importance`).
+
+Webhooks: `start_research` and `create_monitor` take `webhook_ids` (from the NewsCatcher Platform's Webhooks page) to
+send results there; `keep_updated` monitors get the run's webhooks.
 
 ## Example
 
@@ -168,9 +172,14 @@ Set the variables in **Vercel → Project → Settings → Environment Variables
 | Vercel environment | API it talks to | What to set |
 |---|---|---|
 | Production | PROD | nothing for the APIs (defaults), PostHog values if wanted |
-| Preview (branches / PRs) | DEV | `NEWSCATCHER_NEWS_API_URL/PORT/ENDPOINT` and `NEWSCATCHER_AGENT_API_URL/PORT/ENDPOINT` → DEV hosts |
+| Dev (custom environment, `dev` branch, own domain) | DEV | `NEWSCATCHER_NEWS_API_URL/PORT/ENDPOINT` and `NEWSCATCHER_AGENT_API_URL/PORT/ENDPOINT` → DEV hosts; `POSTHOG_ENABLED=false` or the PostHog values |
+| Preview (other branches / PRs) | DEV | `NEWSCATCHER_NEWS_API_URL/PORT/ENDPOINT` and `NEWSCATCHER_AGENT_API_URL/PORT/ENDPOINT` → DEV hosts |
 
 Never set `NEWSCATCHER_API_KEY` on Vercel: users bring their own keys.
+
+Without the API host variables an environment talks to the PROD APIs (the defaults). MCP clients cannot pass
+Vercel Authentication, so keep Deployment Protection off for any domain clients connect to. Analytics events carry
+the Vercel environment name (e.g. `dev`) unless `POSTHOG_ENVIRONMENT` is set.
 
 ## Run locally
 
