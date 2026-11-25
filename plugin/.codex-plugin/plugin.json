@@ -1,6 +1,6 @@
 {
   "name": "newscatcher",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "NewsCatcher for AI agents: search the news in every language, count and list every matching article, and run the NewsCatcher research agent to build verified event datasets, watch companies and keep them updated with monitors. Includes skills for briefings, company research, adverse media, sales triggers, event trackers, share of voice and more.",
   "author": {
     "name": "NewsCatcher",

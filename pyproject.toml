@@ -1,6 +1,6 @@
 [project]
 name = "newscatcher-mcp"
-version = "0.3.0"
+version = "0.4.0"
 description = "NewsCatcher MCP server: news search, article counts, stories and the NewsCatcher research agent."
 readme = "README.md"
 license = "MIT"
