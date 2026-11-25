@@ -2,7 +2,28 @@
 
 ## [Unreleased]
 
+Needs Agent API 1.19.2.
+
 ### Added
+- More rows for a finished events run. `start_research` takes `continue_run_id` and `add_rows` (default 50, up to
+  100, the plan's rows per run; a run reaches 1,000 rows). It reads the run and sends `POST /runs/{id}/continue` with `max_rows`, the run's
+  new total; like every paid Agent API write it is never retried after a 5xx or timeout. The answer gives the
+  continuation id to follow with `get_research` and the most it can cost: only the 50-row blocks the new rows start
+  beyond the run's paid ones. `dry_run` shows that cost, the balance and whether the run can be continued, for free.
+  Giving `query` or companies with `continue_run_id` is refused (the run keeps its own query, mode and columns).
+- `get_research` shows continuing: on a run that found every row it asked for (`continuable`), a hint with the
+  `start_research(continue_run_id=…)` call; a continuation in progress; what earlier continuations added and how
+  many of their rows were already in the run. On a continuation it points to the run it adds rows to.
+- Advice for the continuation error codes `run_not_continuable`, `run_busy`, `max_rows_too_low` and
+  `max_rows_too_high` (a 409 there is not "the run is still going").
+- Monitor listings mark the account's free monitor (the API's `free`).
+
+### Changed
+- `start_research` `max_rows` takes 50 or 100 (was 50, 100, 150 or 200): 100 is the most a run may ask for, so
+  150 and 200 were refused by the API (`too_many_rows`). Larger numbers are capped at 100; for more rows, continue the
+  run. The same limit caps `add_rows`.
+- Skills: `agent-api-integration` documents `POST /runs/{id}/continue`, the run's continuation fields and the
+  monitor `free` field; `event-dataset` names continuing among the next steps.
 - `llms-install.md`: setup steps for AI agents (such as Cline) that install MCP servers from the repository. It
   points them at the hosted endpoint instead of a local install, with the Cline `streamableHttp` config.
 - README: connection steps for Hermes Agent (`config.yaml`, sign-in or key) and OpenClaw (`openclaw mcp add` with

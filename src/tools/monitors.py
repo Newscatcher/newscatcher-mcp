@@ -50,7 +50,8 @@ def render_monitor(m: dict[str, Any]) -> str:
         state = f"next run {when(m.get('next_run_at'))}"
     else:
         state = "paused" + (f" ({m['paused_reason']})" if m.get("paused_reason") else "")
-    return f"{m.get('monitor_id')} · \"{clip(m.get('name'), 80)}\" · {m.get('kind')} monitor · {who} · {schedule_text(m.get('schedule'))} · {state}"
+    free = " · free (the account's free monitor: its runs cost nothing)" if m.get("free") else ""
+    return f"{m.get('monitor_id')} · \"{clip(m.get('name'), 80)}\" · {m.get('kind')} monitor · {who} · {schedule_text(m.get('schedule'))} · {state}{free}"
 
 
 def story_line(s: dict[str, Any], update: Any = None) -> str:
