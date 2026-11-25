@@ -6,12 +6,13 @@ import json
 import re
 import time
 
+import httpx
 import pytest
 from fastmcp import Client
 from pydantic import TypeAdapter
 
 from src import client as client_module
-from src.client import NewsCatcherClient
+from src.client import MIN_ATTEMPT_S, ApiError, NewsCatcherClient
 from src.config import load_config
 from src.guides import GUIDES
 from src.server import INSTRUCTIONS, build_server
@@ -669,9 +670,22 @@ async def test_continue_dry_run_prices_only_the_extra_blocks(setup):
               "at most 3,000 credits", "Balance: 9,000 credits", "Standard runs take"):
         assert s in text
     # 30 rows + 20 stay inside the 50 rows a run includes: nothing to pay.
-    h = setup(lambda c: {"json": _events_run(30, continuable=False)} if "/runs/" in c.url else {"json": {}})
+    h = setup(lambda c: {"json": _events_run(30)} if "/runs/" in c.url else {"json": {}})
     text, _ = await h.call("start_research", {"continue_run_id": "r1", "add_rows": 20, "dry_run": True})
-    assert "Cost: free" in text and "cannot be continued: it found fewer rows" in text
+    assert "Cost: free" in text
+    # A run that cannot be continued: why, and no time, cost or balance (nothing would run).
+    h = setup(lambda c: {"json": _events_run(30, continuable=False)} if "/runs/" in c.url else {"json": {"credits_balance": 5}})
+    text, _ = await h.call("start_research", {"continue_run_id": "r1", "dry_run": True})
+    assert "Run r1 has 30 rows. It cannot be continued: it found fewer rows" in text
+    assert "Cost" not in text and "Balance" not in text and not any("/subscription" in c.url for c in h.calls)
+
+
+async def test_get_research_json_leaves_out_the_processing_cost_of_continuations(setup):
+    run = _events_run(5, continuations=[{"continuation_id": "c0", "status": "succeeded", "rows_added": 2, "cost_usd": 0.15}])
+    text, _ = await setup(lambda c: {"json": run}).call("get_research", {"run_id": "r1", "wait_seconds": 0, "format": "json"})
+    data = json.loads(text)
+    assert data["continuations"] == [{"continuation_id": "c0", "status": "succeeded", "rows_added": 2}]
+    assert "usd" not in text
 
 
 async def test_continue_run_limits_and_wrong_runs(setup):
@@ -753,3 +767,46 @@ async def test_add_rows_schema_is_bounded():
     p = tools["start_research"].input_schema["properties"]
     assert p["add_rows"]["maximum"] == 100 and p["add_rows"]["minimum"] == 1 and p["add_rows"]["default"] == 50
     assert p["continue_run_id"]["anyOf"][0]["type"] == "string"
+
+
+# ---------------------------------------------------------------- retries inside the call's time budget
+
+
+async def test_no_retry_once_the_call_budget_is_nearly_spent(setup):
+    # A slow upstream answering 503: with little of the budget left, the error comes back at once instead of
+    # retrying past the platform's limit (which would end the call with no answer at all).
+    cfg = dataclasses.replace(load_config(), max_call_seconds=4)
+    h = setup(lambda c: {"status": 503, "json": {"message": "upstream"}}, config=cfg)
+    text, err = await h.call("get_account", {})
+    assert err and len(h.calls) == 1 and "503" in text
+    # With the whole budget, the same read is retried as before.
+    h = setup(lambda c: {"status": 503, "json": {"message": "upstream"}})
+    await h.call("get_account", {})
+    assert len(h.calls) == 3
+
+
+async def test_each_attempt_is_capped_by_the_time_left(respx_mock):
+    seen: list[dict] = []
+
+    def handle(request):
+        seen.append(request.extensions["timeout"])
+        raise httpx.ReadTimeout("slow", request=request)
+
+    respx_mock.route(host="api.newscatcherapi.com").mock(side_effect=handle)
+    async with NewsCatcherClient(load_config(), "k", deadline=time.monotonic() + 20) as client:
+        with pytest.raises(ApiError) as e:
+            await client.get("news", "/subscription")
+    assert len(seen) == 1 and 15 < seen[0]["read"] <= 20  # not the 90 s default
+    assert e.value.code == "timeout" and re.search(r"within (1[5-9]|20) s.", e.value.message)
+    # Without a deadline (local use) the configured timeout applies.
+    seen.clear()
+    async with NewsCatcherClient(load_config(), "k") as client:
+        with pytest.raises(ApiError):
+            await client.get("news", "/subscription")
+    assert seen[0]["read"] == 90
+    # Past the deadline an attempt still gets the minimum.
+    seen.clear()
+    async with NewsCatcherClient(load_config(), "k", deadline=time.monotonic() - 1) as client:
+        with pytest.raises(ApiError):
+            await client.get("news", "/subscription")
+    assert seen[0]["read"] == MIN_ATTEMPT_S

@@ -18,6 +18,15 @@ Needs Agent API 1.19.2.
   `max_rows_too_high` (a 409 there is not "the run is still going").
 - Monitor listings mark the account's free monitor (the API's `free`).
 
+### Fixed
+- A slow upstream no longer leaves a tool call without an answer. Retries of reads and searches (after 429, 502,
+  503, 504 or a network error) are made only while the call's time budget (`NEWSCATCHER_MAX_CALL_SECONDS`) leaves room
+  for them, and each attempt's timeout is capped at the time left (at least 5 s). Before, three slow 5xx answers
+  could take the call past the platform's function limit, which ended it with no answer at all; now the error comes
+  back, with its Correlation-ID.
+- `get_research(format="json")` leaves out `cost_usd` from a run's continuations: the API's processing cost, not
+  a price, and prices are given in credits only.
+
 ### Changed
 - `start_research` `max_rows` takes 50 or 100 (was 50, 100, 150 or 200): 100 is the most a run may ask for, so
   150 and 200 were refused by the API (`too_many_rows`). Larger numbers are capped at 100; for more rows, continue the
