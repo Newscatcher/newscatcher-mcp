@@ -18,6 +18,10 @@ Needs Agent API 1.19.2.
   `max_rows_too_high` (a 409 there is not "the run is still going").
 - Monitor listings mark the account's free monitor (the API's `free`).
 
+### Fixed
+- `get_research(format="json")` leaves out `cost_usd` from a run's continuations: the API's processing cost, not
+  a price, and prices are given in credits only.
+
 ### Changed
 - `start_research` `max_rows` takes 50 or 100 (was 50, 100, 150 or 200): 100 is the most a run may ask for, so
   150 and 200 were refused by the API (`too_many_rows`). Larger numbers are capped at 100; for more rows, continue the

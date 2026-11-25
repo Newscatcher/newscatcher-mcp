@@ -669,9 +669,22 @@ async def test_continue_dry_run_prices_only_the_extra_blocks(setup):
               "at most 3,000 credits", "Balance: 9,000 credits", "Standard runs take"):
         assert s in text
     # 30 rows + 20 stay inside the 50 rows a run includes: nothing to pay.
-    h = setup(lambda c: {"json": _events_run(30, continuable=False)} if "/runs/" in c.url else {"json": {}})
+    h = setup(lambda c: {"json": _events_run(30)} if "/runs/" in c.url else {"json": {}})
     text, _ = await h.call("start_research", {"continue_run_id": "r1", "add_rows": 20, "dry_run": True})
-    assert "Cost: free" in text and "cannot be continued: it found fewer rows" in text
+    assert "Cost: free" in text
+    # A run that cannot be continued: why, and no time, cost or balance (nothing would run).
+    h = setup(lambda c: {"json": _events_run(30, continuable=False)} if "/runs/" in c.url else {"json": {"credits_balance": 5}})
+    text, _ = await h.call("start_research", {"continue_run_id": "r1", "dry_run": True})
+    assert "Run r1 has 30 rows. It cannot be continued: it found fewer rows" in text
+    assert "Cost" not in text and "Balance" not in text and not any("/subscription" in c.url for c in h.calls)
+
+
+async def test_get_research_json_leaves_out_the_processing_cost_of_continuations(setup):
+    run = _events_run(5, continuations=[{"continuation_id": "c0", "status": "succeeded", "rows_added": 2, "cost_usd": 0.15}])
+    text, _ = await setup(lambda c: {"json": run}).call("get_research", {"run_id": "r1", "wait_seconds": 0, "format": "json"})
+    data = json.loads(text)
+    assert data["continuations"] == [{"continuation_id": "c0", "status": "succeeded", "rows_added": 2}]
+    assert "usd" not in text
 
 
 async def test_continue_run_limits_and_wrong_runs(setup):

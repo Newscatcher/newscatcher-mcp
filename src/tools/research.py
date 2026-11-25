@@ -542,25 +542,25 @@ def register_research_tools(mcp: FastMCP, config: Config) -> None:
             else "free: the new rows fit in the 50-row blocks the run already paid for"
         )
         if dry_run:
+            if not run.get("continuable"):
+                active = run.get("continuation") or {}
+                if active.get("continuation_id"):
+                    why = f"It is being continued now (continuation {active['continuation_id']}): wait for that to end first."
+                elif run.get("status") != "succeeded":
+                    why = f"It cannot be continued: it has not succeeded (status {run.get('status')})."
+                else:
+                    why = (
+                        "It cannot be continued: it found fewer rows than it asked for, so its search has nothing more "
+                        "to give, or its research is no longer kept (30 days after it ended). Start a new run instead "
+                        "(standard and max search more widely)."
+                    )
+                return f"Dry run: nothing was started or charged.\nRun {run_id} has {plural(rows_now, 'row')}. {why}"
             balance = await credit_balance(call)
-            active = run.get("continuation") or {}
-            if run.get("continuable"):
-                can = "It can be continued now."
-            elif active.get("continuation_id"):
-                can = f"It is being continued now (continuation {active['continuation_id']}): wait for that to end first."
-            elif run.get("status") != "succeeded":
-                can = f"It cannot be continued: it has not succeeded (status {run.get('status')})."
-            else:
-                can = (
-                    "It cannot be continued: it found fewer rows than it asked for, so its search has nothing more to "
-                    "give, or its research is no longer kept (30 days after it ended). Start a new run instead "
-                    "(standard and max search more widely)."
-                )
             lines = [
                 "Dry run: nothing was started or charged.",
                 f"Would continue run {run_id} ({mode}): {plural(rows_now, 'row')} now, up to {num(total)} after (+{added}). "
                 "Rows it already has are left out, so it can add fewer.",
-                can,
+                "It can be continued now.",
                 f"Time: {ETA.get(mode, 'runs take minutes')}.",
                 f"Cost: {cost_text}.",
                 f"Balance: {num(balance)} credits." if balance is not None and math.isfinite(balance) else "",
@@ -663,7 +663,9 @@ def register_research_tools(mcp: FastMCP, config: Config) -> None:
                 ({"#": r["__n"], **{k: v for k, v in r.items() if k != "__n"}} if r.get("__n") else r)
                 for r in (detail.get("rows") or [])[rows_offset : rows_offset + rows_limit]
             ]
-            return to_json({**detail, "rows": rows, "rows_total": len(detail.get("rows") or []), "rows_offset": rows_offset})
+            return to_json(
+                {**public_detail(detail), "rows": rows, "rows_total": len(detail.get("rows") or []), "rows_offset": rows_offset}
+            )
         return render_run(detail, rows_offset, rows_limit)
 
     # ------------------------------------------------------------------ cancel_research
@@ -803,6 +805,21 @@ def batch_text(p: dict[str, Any]) -> str:
         f"{p.get('companies_done') or 0}/{p.get('companies_total') or '?'} companies, "
         f"{p.get('runs_done') or 0}/{p.get('runs_total') or '?'} runs done"
     )
+
+
+def public_detail(d: dict[str, Any]) -> dict[str, Any]:
+    """A run detail without the API's processing cost of each continuation (``cost_usd``): prices are given in
+    credits only, and that figure is not what the user pays.
+
+    Args:
+        d (dict[str, Any]): Run detail.
+
+    Returns:
+        dict[str, Any]: The detail, its continuations without ``cost_usd``.
+    """
+    if not d.get("continuations"):
+        return d
+    return {**d, "continuations": [{k: v for k, v in c.items() if k != "cost_usd"} for c in d["continuations"]]}
 
 
 def continuation_lines(d: dict[str, Any]) -> list[str]:
