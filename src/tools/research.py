@@ -27,6 +27,12 @@ from src.tools.params import (
 
 TERMINAL = {"succeeded", "failed", "cancelled"}
 
+# Rows one run may ask for, set on the Agent API (more is refused with too_many_rows). It caps a new run's max_rows
+# and the rows one continuation adds (the API's own continuation cap, 200, is higher). Change it here if that setting
+# changes. A run reaches 1,000 rows at most over all its continuations (Agent API 1.19.0).
+PLAN_MAX_ROWS = 100
+MAX_RUN_ROWS = 1000
+
 
 ETA = {
     "fast": "Fast runs usually finish in 3–10 minutes",
@@ -130,8 +136,33 @@ def events_max(mode: str, rows: int | None = 50) -> int:
     Returns:
         int: Credits.
     """
-    rows = rows or 50
-    return PRICES["run"][mode] + PRICES["extra50"][mode] * max(0, math.ceil((rows - 50) / 50))
+    return PRICES["run"][mode] + PRICES["extra50"][mode] * extra_blocks(rows or 50)
+
+
+def extra_blocks(rows: int) -> int:
+    """50-row blocks charged beyond the first 50 rows, the last partial block counting in full.
+
+    Args:
+        rows (int): Rows delivered.
+
+    Returns:
+        int: Blocks.
+    """
+    return max(0, math.ceil((rows - 50) / 50))
+
+
+def continuation_max(mode: str, rows_before: int, added: int) -> int:
+    """Most a continuation can cost at list price: only the blocks its new rows start beyond the run's paid ones.
+
+    Args:
+        mode (str): The run's mode.
+        rows_before (int): The run's rows now.
+        added (int): Rows the continuation may add.
+
+    Returns:
+        int: Credits (50 rows then 50 more cost what 100 rows at once cost).
+    """
+    return PRICES["extra50"][mode] * (extra_blocks(rows_before + added) - extra_blocks(rows_before))
 
 
 def estimate(kind: str, mode: str, rows: int | None, companies: int, keep_updated: bool | Schedule | None) -> list[str]:
@@ -177,7 +208,7 @@ def estimate(kind: str, mode: str, rows: int | None, companies: int, keep_update
 
 
 def _round_rows(v: object) -> object:
-    """The API takes 50, 100, 150 or 200 rows: round other numbers up to the next allowed size.
+    """A run asks for 50 or 100 rows: round other numbers up to the next allowed size (at most ``PLAN_MAX_ROWS``).
 
     Args:
         v (object): Raw input.
@@ -188,7 +219,7 @@ def _round_rows(v: object) -> object:
     if isinstance(v, str) and v.strip().isdigit():
         v = int(v.strip())
     if isinstance(v, (int, float)) and not isinstance(v, bool):
-        return next((x for x in (50, 100, 150, 200) if x >= v), 200)
+        return next((x for x in (50, 100) if x >= v), PLAN_MAX_ROWS)
     return v
 
 
@@ -212,9 +243,9 @@ def company_time(n: int) -> str:
 
 
 MaxRows = Annotated[
-    Literal[50, 100, 150, 200] | None,
+    Literal[50, 100] | None,
     BeforeValidator(_round_rows),
-    Field(description="Events only: rows to return at most (default 50; plans cap it, e.g. 100). Charged per 50 rows past the first 50."),
+    Field(description="Events only: rows to return at most, 50 (default) or 100. Charged per 50 rows past the first 50."),
 ]
 
 
@@ -241,6 +272,8 @@ def register_research_tools(mcp: FastMCP, config: Config) -> None:
             "(2) companies: give companies (domains) or a company_list_id → every recent story about each company "
             "(funding, M&A, leadership, product, legal…), optionally filtered by query. "
             "keep_updated turns it into a monitor. dry_run=true checks the query and shows time and cost first, free. "
+            "More rows for a finished events run that found every row it asked for: continue_run_id (and add_rows) "
+            "adds rows to it, charged only for the extra rows, cheaper than a new run. "
             "Returns a run_id; follow it with get_research."
         ),
         toolset="research",
@@ -321,8 +354,32 @@ def register_research_tools(mcp: FastMCP, config: Config) -> None:
                 )
             ),
         ] = False,
+        continue_run_id: Annotated[
+            str | None,
+            Field(
+                description=(
+                    "Add rows to this finished events run instead of starting a new one (get_research shows when it "
+                    "can: it found every row it asked for). Keeps the run's query, mode and columns; leaves out rows "
+                    "it already has. Give no query or companies with it."
+                )
+            ),
+        ] = None,
+        add_rows: Annotated[
+            int,
+            Field(ge=1, le=PLAN_MAX_ROWS, description=(
+                    f"With continue_run_id: rows to add (default 50, up to {PLAN_MAX_ROWS}; a run reaches "
+                    f"{num(MAX_RUN_ROWS)} rows)."
+                ),
+            ),
+        ] = 50,
     ) -> str:
-        """Start an events or companies research run."""
+        """Start an events or companies research run, or continue a finished events run with more rows."""
+        if continue_run_id:
+            if (query or "").strip() or companies or company_list_id:
+                raise UserError(
+                    "continue_run_id keeps the run's own query: give it without query, companies or company_list_id."
+                )
+            return await _continue_run(call, continue_run_id, add_rows, dry_run, wait_seconds)
         with_companies = bool(companies or company_list_id)
         if not with_companies and not (query or "").strip():
             raise UserError("Give a query (events) or companies / company_list_id (company news).")
@@ -402,12 +459,7 @@ def register_research_tools(mcp: FastMCP, config: Config) -> None:
         if company_list_id:
             data = await call.client.get("agent", f"/companies/lists/{quote(company_list_id, safe='')}")
             n_companies = int((data or {}).get("count") or len((data or {}).get("companies") or []))
-        balance: float | None = None
-        try:
-            sub = await call.client.get("news", "/subscription")
-            balance = float(sub.get("credits_balance"))
-        except Exception:  # noqa: BLE001 - the estimate still helps without the balance
-            balance = None
+        balance = await credit_balance(call)
         if kind == "events":
             what = f'events research, mode {mode}, up to {max_rows or 50} rows: "{clip(query or "", 300)}"'
         else:
@@ -448,6 +500,88 @@ def register_research_tools(mcp: FastMCP, config: Config) -> None:
             "To run it: the same start_research call without dry_run.",
         ]
         return "\n".join(x for x in lines if x)
+
+    async def _continue_run(call: Call, run_id: str, add_rows: int, dry_run: bool, wait_seconds: int) -> str:
+        """Continue a finished events run with more rows (``POST /runs/{run_id}/continue``), or show what it would do.
+
+        The API takes the run's new total, so the run is read first for its rows now. The POST starts a paid run and
+        is never retried.
+
+        Args:
+            call (Call): The tool call.
+            run_id (str): The run to continue.
+            add_rows (int): Rows to add.
+            dry_run (bool): Only show what it would do and cost.
+            wait_seconds (int): Wait this long for the continuation to finish.
+
+        Returns:
+            str: The text.
+
+        Raises:
+            UserError: The run is a continuation, a companies run, or already has 1,000 rows.
+        """
+        path = f"/runs/{quote(run_id, safe='')}"
+        run = await call.client.get("agent", path)
+        if run.get("continue_of"):
+            raise UserError(
+                f"Run {run_id} is itself a continuation of run {run['continue_of']}: continue that run instead "
+                f'(continue_run_id="{run["continue_of"]}").'
+            )
+        if run.get("kind") == "companies":
+            raise UserError("Only events runs can be continued. For more company news, start a new run (e.g. a longer lookback_days).")
+        rows_now = len(run.get("rows") or [])
+        if rows_now >= MAX_RUN_ROWS:
+            raise UserError(f"Run {run_id} already has {num(rows_now)} rows, the most a run can have. Start a new run instead.")
+        added = min(add_rows, MAX_RUN_ROWS - rows_now)
+        total = rows_now + added
+        mode = run.get("mode") or "fast"
+        cost = continuation_max(mode, rows_now, added)
+        cost_text = (
+            f"at most {credits(cost)} at list price, only for the 50-row blocks the new rows start; nothing if it adds no rows"
+            if cost
+            else "free: the new rows fit in the 50-row blocks the run already paid for"
+        )
+        if dry_run:
+            if not run.get("continuable"):
+                active = run.get("continuation") or {}
+                if active.get("continuation_id"):
+                    why = f"It is being continued now (continuation {active['continuation_id']}): wait for that to end first."
+                elif run.get("status") != "succeeded":
+                    why = f"It cannot be continued: it has not succeeded (status {run.get('status')})."
+                else:
+                    why = (
+                        "It cannot be continued: it found fewer rows than it asked for, so its search has nothing more "
+                        "to give, or its research is no longer kept (30 days after it ended). Start a new run instead "
+                        "(standard and max search more widely)."
+                    )
+                return f"Dry run: nothing was started or charged.\nRun {run_id} has {plural(rows_now, 'row')}. {why}"
+            balance = await credit_balance(call)
+            lines = [
+                "Dry run: nothing was started or charged.",
+                f"Would continue run {run_id} ({mode}): {plural(rows_now, 'row')} now, up to {num(total)} after (+{added}). "
+                "Rows it already has are left out, so it can add fewer.",
+                "It can be continued now.",
+                f"Time: {ETA.get(mode, 'runs take minutes')}.",
+                f"Cost: {cost_text}.",
+                f"Balance: {num(balance)} credits." if balance is not None and math.isfinite(balance) else "",
+                "To run it: the same start_research call without dry_run.",
+            ]
+            return "\n".join(x for x in lines if x)
+        data = await call.client.post("agent", f"{path}/continue", {"max_rows": total})
+        cid = data.get("continuation_id")
+        head = (
+            f"Continuing run {run_id}: continuation {cid} (status {data.get('status')}), from "
+            f"{plural(int(data.get('rows', rows_now)), 'row')} to up to {num(int(data.get('max_rows', total)))}. "
+            f"Rows the run already has are left out, so it can add fewer. Cost: {cost_text}. When it succeeds, its rows "
+            "are added to the run and the run's webhooks get the whole table again."
+        )
+        wait = call.wait_budget(wait_seconds)
+        if wait_seconds > 0 and wait > 0:
+            return f"{head}\n{render_run(await wait_for_run(call, {'run_id': cid}, wait), 0, 25)}"
+        return (
+            f"{head}\n{ETA.get(mode, 'Runs take minutes')}. Next: get_research(run_id=\"{cid}\", wait_seconds=120) to "
+            f'follow it; once it succeeds, get_research(run_id="{run_id}") has every row.'
+        )
 
     # ------------------------------------------------------------------ get_research
     @register(
@@ -529,7 +663,9 @@ def register_research_tools(mcp: FastMCP, config: Config) -> None:
                 ({"#": r["__n"], **{k: v for k, v in r.items() if k != "__n"}} if r.get("__n") else r)
                 for r in (detail.get("rows") or [])[rows_offset : rows_offset + rows_limit]
             ]
-            return to_json({**detail, "rows": rows, "rows_total": len(detail.get("rows") or []), "rows_offset": rows_offset})
+            return to_json(
+                {**public_detail(detail), "rows": rows, "rows_total": len(detail.get("rows") or []), "rows_offset": rows_offset}
+            )
         return render_run(detail, rows_offset, rows_limit)
 
     # ------------------------------------------------------------------ cancel_research
@@ -605,6 +741,22 @@ def register_research_tools(mcp: FastMCP, config: Config) -> None:
         )
 
 
+async def credit_balance(call: Call) -> float | None:
+    """The account's credit balance for a cost estimate, or None when it cannot be read.
+
+    Args:
+        call (Call): The tool call.
+
+    Returns:
+        float | None: Credits.
+    """
+    try:
+        sub = await call.client.get("news", "/subscription")
+        return float(sub.get("credits_balance"))
+    except Exception:  # noqa: BLE001 - the estimate still helps without the balance
+        return None
+
+
 async def wait_for_run(call: Call, ref: dict[str, Any], wait_seconds: float) -> dict[str, Any]:
     """Poll a run (or batch) until it ends or the wait runs out, reporting each phase as progress.
 
@@ -655,6 +807,58 @@ def batch_text(p: dict[str, Any]) -> str:
     )
 
 
+def public_detail(d: dict[str, Any]) -> dict[str, Any]:
+    """A run detail without the API's processing cost of each continuation (``cost_usd``): prices are given in
+    credits only, and that figure is not what the user pays.
+
+    Args:
+        d (dict[str, Any]): Run detail.
+
+    Returns:
+        dict[str, Any]: The detail, its continuations without ``cost_usd``.
+    """
+    if not d.get("continuations"):
+        return d
+    return {**d, "continuations": [{k: v for k, v in c.items() if k != "cost_usd"} for c in d["continuations"]]}
+
+
+def continuation_lines(d: dict[str, Any]) -> list[str]:
+    """What a run's continuations did and whether it can get more rows (Agent API 1.19.0).
+
+    Args:
+        d (dict[str, Any]): Run detail.
+
+    Returns:
+        list[str]: Lines (empty for a run never continued and not continuable).
+    """
+    out: list[str] = []
+    ended = d.get("continuations") or []
+    if ended:
+        parts = []
+        for c in ended[-5:]:
+            dups = sum(v for v in (c.get("duplicates") or {}).values() if isinstance(v, int))
+            parts.append(
+                f"{c.get('status')}, +{plural(int(c.get('rows_added') or 0), 'row')}"
+                + (f" ({dups} it found were already in the run)" if dups else "")
+            )
+        more = f" (last 5 of {len(ended)})" if len(ended) > 5 else ""
+        out.append(f"Continued {plural(len(ended), 'time')}{more}: " + " · ".join(parts) + ".")
+    active = d.get("continuation") or {}
+    if active.get("continuation_id"):
+        cid = active["continuation_id"]
+        out.append(
+            f"Being continued: continuation {cid}, up to {active.get('max_rows')} rows in all. "
+            f'get_research(run_id="{cid}") follows it; the new rows appear here when it succeeds.'
+        )
+    if d.get("continuable") and d.get("run_id"):
+        out.append(
+            "More rows: this run found every row it asked for, so the news may have more. "
+            f'start_research(continue_run_id="{d["run_id"]}", add_rows=50) adds them, charged only for the extra rows '
+            "(cheaper than a new run; dry_run=true shows the cost)."
+        )
+    return out
+
+
 COMPANY_COLUMNS = ["company", "date", "story_type", "importance", "headline", "summary", "outlets", "url"]
 _PHASE_MARK = {"done": "✓", "active": "…", "skipped": "–"}
 
@@ -685,6 +889,14 @@ def render_run(d: dict[str, Any], offset: int, limit: int) -> str:
         + (f' · "{clip(d.get("title") or d.get("query"), 140)}"' if d.get("title") or d.get("query") else "")
         + (f" · news {d['window_from']} → {d.get('window_to')}" if d.get("window_from") else "")
     ]
+    if d.get("continue_of"):
+        parent = d["continue_of"]
+        lines.append(
+            f'A continuation of run {parent}: once it succeeds, its new rows are in get_research(run_id="{parent}"), '
+            "which has every row (the rows here are what it found, before repeats of the run's rows were left out)."
+            if status == "succeeded"
+            else f"A continuation: it adds rows to run {parent}."
+        )
     if phase_line:
         lines.append(f"Phases: {phase_line}" + (f" ({round(secs / 60)} min)" if secs and status in TERMINAL else ""))
     if d.get("progress"):
@@ -785,6 +997,7 @@ def render_run(d: dict[str, Any], offset: int, limit: int) -> str:
         shown = f"Rows {offset + 1}–{offset + len(page)} of {len(rows)}." if page else f"No rows at offset {offset}."
         more = f" More: rows_offset={offset + len(page)}." if offset + len(page) < len(rows) else ""
         lines.append(f"{shown}{more}")
+    lines.extend(continuation_lines(d))
     if d.get("keep_updated"):
         k = d["keep_updated"]
         lines.append(

@@ -93,7 +93,7 @@ end-to-end eval (37 of the 39 critical-skill test prompts at 4+ of 5 with Claude
 | news | `count_articles` | Daily/weekly/monthly counts for 1–5 queries, share of voice | 5 per bucket × query (max 60) |
 | news | `get_story` | All coverage of one story: newsrooms, earliest articles | 1 |
 | news | `get_account` | Plan, balance, limits | free |
-| research | `start_research` | Research agent run: events dataset or company news; `dry_run` estimates cost free | per run |
+| research | `start_research` | Research agent run: events dataset or company news; `dry_run` estimates cost free; `continue_run_id` adds rows to a finished events run | per run (a continuation: only the extra rows) |
 | research | `get_research` | Wait for a run and show its table; list runs | free |
 | research | `cancel_research` | Stop a run (not charged) | free |
 | research | `resend_results` | Send a run's or monitor run's results to its webhooks again | free |

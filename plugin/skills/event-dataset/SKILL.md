@@ -14,7 +14,7 @@ Runs on the NewsCatcher MCP tools (`start_research`, `get_research`, `export_res
 - What counts as a row, the scope and the window come from the request ("this year" = Jan 1 to today). Missing the
   event type altogether? Ask and stop.
 - Size: 50 rows in fast mode (3–10 minutes, about 1,000 credits). That is also the size when the user can't be
-  asked, even for "every" or "all": run 50 and say that more rows (100–200) or a deeper mode find more.
+  asked, even for "every" or "all": run 50 and say that more rows (100, or continuing the run) or a deeper mode find more.
 - More rows than 50, or standard or max mode: show the cost with `dry_run=true` and wait for the user's OK first.
 
 ## Write the query
@@ -57,7 +57,8 @@ One sentence: **event + scope + window + columns**, describing events, not cover
    The summary line quotes the "Counts over all N rows shown" line of the kept rows.
 3. A one-line summary from the "Counts over all N rows" line of get_research ("38 recalls; Ford leads with 9").
 4. What it may miss: a fast run samples big topics; thin coverage, non-English sources and small events. Next steps:
-   more rows, `mode="standard"`, or a monitor with `create_monitor(from_run_id=run_id)` if the user wants it kept current.
+   more rows (when get_research says the run found every row, `start_research(continue_run_id=run_id)` adds 50,
+   charged only for the extra rows), `mode="standard"`, or a monitor with `create_monitor(from_run_id=run_id)` if the user wants it kept current.
 
 ## Before you send
 Check each line; fix the answer where one fails.

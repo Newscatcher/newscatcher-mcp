@@ -26,6 +26,10 @@ logger = setup_logging(__name__)
 Api = Literal["news", "agent"]
 
 RETRYABLE = {429, 502, 503, 504}
+
+# Shortest attempt worth making (seconds): a retry that would leave less of the call's time budget is not made, and
+# an attempt near the deadline still gets this long.
+MIN_ATTEMPT_S = 5.0
 MAY_HAVE_GONE_THROUGH = (
     " The request may have gone through: check (get_research with no run_id lists runs; get_monitor lists monitors)"
     " before trying again."
@@ -49,6 +53,18 @@ CODE_HINTS = {
     "nothing_to_send": "Nothing to send: the run failed or was cancelled, or no monitor run found anything new.",
     "run_in_progress": "The run has not finished yet; it sends to its webhooks by itself when it succeeds.",
     "resend_too_soon": "Already sent to this webhook within the last minute: it is on its way. Do not resend now.",
+    "run_not_continuable": "This run cannot be continued, for the reason above. Nothing was started or charged.",
+    "run_busy": (
+        "The run is already being continued: get_research on the run shows that continuation. Continue again once it "
+        "has ended. Nothing was started or charged."
+    ),
+    "max_rows_too_low": (
+        "max_rows is the run's new total, and start_research sets it to the run's rows plus add_rows: check the run's "
+        "rows with get_research. Nothing was started or charged."
+    ),
+    "max_rows_too_high": (
+        "Lower add_rows (max_rows above is the run's new total: its rows plus add_rows). Nothing was started or charged."
+    ),
 }
 
 # Patched in tests so retry back-off does not slow the suite down.
@@ -291,6 +307,8 @@ class NewsCatcherClient:
             attempt += 1
             if pacer is not None:
                 await pacer.wait()
+            # No attempt outlasts the call's time budget, so the tool answers before the platform ends the call.
+            attempt_timeout = max(MIN_ATTEMPT_S, min(self.config.timeout_s, self.time_left()))
             started = time.monotonic()
             try:
                 res = await self._http.request(
@@ -300,14 +318,15 @@ class NewsCatcherClient:
                     json=body if files is None and body is not None else None,
                     files=files,
                     headers=headers,
+                    timeout=attempt_timeout,
                 )
             except httpx.TimeoutException as exc:
                 self._log_call(api, method, path, None, started, attempt, error=type(exc).__name__)
-                message = f"NewsCatcher did not answer within {round(self.config.timeout_s)} s."
+                message = f"NewsCatcher did not answer within {round(attempt_timeout)} s."
                 raise ApiError(504, message + ("" if idempotent else MAY_HAVE_GONE_THROUGH), "timeout") from exc
             except httpx.TransportError as exc:
                 self._log_call(api, method, path, None, started, attempt, error=type(exc).__name__)
-                if attempt < 3 and idempotent:
+                if attempt < 3 and idempotent and self._retry_fits(0.8 * attempt):
                     await _sleep(0.8 * attempt)
                     continue
                 message = f"Could not reach NewsCatcher: {exc}."
@@ -333,12 +352,25 @@ class NewsCatcherClient:
                     base = max(retry_after_s or 1, 1) * 2 ** (attempt - 1)
                 else:
                     base = retry_after_s if retry_after_s else float(attempt)
-                await _sleep(min(base + random.random() * 0.3, 10.0))
-                continue
+                delay = min(base + random.random() * 0.3, 10.0)
+                if self._retry_fits(delay):
+                    await _sleep(delay)
+                    continue
 
             if not idempotent and res.status_code >= 502:
                 message += MAY_HAVE_GONE_THROUGH
             raise ApiError(res.status_code, message[:800], code, correlation_id, retry_after_s)
+
+    def _retry_fits(self, delay: float) -> bool:
+        """Whether a retry after ``delay`` seconds still leaves time for a useful attempt within the call's budget.
+
+        Args:
+            delay (float): Back-off before the retry.
+
+        Returns:
+            bool: True when the retry fits; otherwise the error goes back to the caller now.
+        """
+        return self.time_left() - delay >= MIN_ATTEMPT_S
 
     def _log_call(
         self,

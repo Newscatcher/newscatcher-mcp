@@ -30,7 +30,7 @@ Pick the tool by the question:
 - How many articles, every article, exact keyword or boolean matching, or news older than 30 days (up to 12 months): list_articles (count_only=true for just the number).
 - Trends, spikes, share of voice over time: count_articles.
 - How big one story is, who covered it first: get_story with a story id from search_news.
-- A table of events with sources (deals, layoffs, funding rounds, recalls, lawsuits…): start_research with a query, then get_research to wait for it. Fast takes minutes; standard/max are deeper and slower.
+- A table of events with sources (deals, layoffs, funding rounds, recalls, lawsuits…): start_research with a query, then get_research to wait for it. Fast takes minutes; standard/max are deeper and slower. More rows for a run that found every row it asked for: start_research(continue_run_id=…).
 - Recent news about specific companies (a watchlist, portfolio, accounts, competitors): start_research with companies or a company_list_id.
 - Keep any of these updated on a schedule: start_research(keep_updated=true) or create_monitor; read results with get_monitor_updates.
 - Reusable sets of companies: save_company_list, get_company_list, edit_company_list. Find a monitor or list by name, topic or company: search= on get_monitor or get_company_list.
