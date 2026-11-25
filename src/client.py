@@ -49,6 +49,18 @@ CODE_HINTS = {
     "nothing_to_send": "Nothing to send: the run failed or was cancelled, or no monitor run found anything new.",
     "run_in_progress": "The run has not finished yet; it sends to its webhooks by itself when it succeeds.",
     "resend_too_soon": "Already sent to this webhook within the last minute: it is on its way. Do not resend now.",
+    "run_not_continuable": "This run cannot be continued, for the reason above. Nothing was started or charged.",
+    "run_busy": (
+        "The run is already being continued: get_research on the run shows that continuation. Continue again once it "
+        "has ended. Nothing was started or charged."
+    ),
+    "max_rows_too_low": (
+        "max_rows is the run's new total, and start_research sets it to the run's rows plus add_rows: check the run's "
+        "rows with get_research. Nothing was started or charged."
+    ),
+    "max_rows_too_high": (
+        "Lower add_rows (max_rows above is the run's new total: its rows plus add_rows). Nothing was started or charged."
+    ),
 }
 
 # Patched in tests so retry back-off does not slow the suite down.

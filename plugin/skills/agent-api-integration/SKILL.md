@@ -16,6 +16,7 @@ Base URL `https://api.newscatcherapi.com/agent` (define it once as a constant an
 | Stream it | `GET /runs/{id}/progress` | Server-Sent Events `run_status`, `run_event`, `run_result`, `run_error`; resume with `Last-Event-ID` |
 | Results | `GET /runs/{id}` | `columns`, `rows` (each with a source URL), `companies` (coverage per company), `report` (standard/max) |
 | Company run outcome | `GET /runs/{id}` · `GET /batches/{id}` | `company_counts` (companies per `news_status`), `companies_failed` (not charged), `outcome`: `complete` or `partial` (`status` stays `succeeded` for a partial run) |
+| More rows | `POST /runs/{id}/continue {"max_rows": <new total>}` | a succeeded events run with `continuable: true` (it found every row it asked for); `202 {continuation_id, rows, max_rows}`; follow `GET /runs/{continuation_id}`, then `GET /runs/{id}` has every row (`continuations` says what each added) and its webhooks get the table again; up to 100 rows added per call (the plan's rows per run; more is `too_many_rows`), 1,000 per run; charged only for the new 50-row blocks; `409 run_not_continuable` / `run_busy` |
 | Files | `GET /runs/{id}/export.csv` · `export.xlsx` (the rows, for events and company runs) · `companies.csv` (one row per company, company runs) | after the run succeeds |
 | List runs | `GET /runs?limit=20&kind=events` | to find a run after a crash or timeout |
 | Batches | `GET /batches/{id}` | `progress {runs_done, runs_total, companies_done, companies_total}`; same export paths |
@@ -25,7 +26,7 @@ Base URL `https://api.newscatcherapi.com/agent` (define it once as a constant an
 | List status | `GET /companies/lists/{id}` | `status`: resolving → ready, plus a status per company; a run started on a resolving list waits for it |
 | Add / fix | `POST /companies/lists/{id}/companies {companies}` · `PATCH /companies/lists/{id}/companies/{domain}` | |
 | Monitor | `POST /monitors {kind, …}` | `kind: "companies"` with `companies` or `list_id` (+ `query`), or `kind: "dataset"` with `from_run_id` |
-| List monitors | `GET /monitors` · `GET /monitors/{id}` | settings, schedule, `next_run_at`, `last_run_id`; `?q=&limit=&cursor=` searches and pages (`next_cursor`, `total`) |
+| List monitors | `GET /monitors` · `GET /monitors/{id}` | settings, schedule, `next_run_at`, `last_run_id`, `free` (the account's free monitor); `?q=&limit=&cursor=` searches and pages (`next_cursor`, `total`) |
 | Deliveries | `GET /monitors/{id}/stories?days=7` (companies) · `GET /monitors/{id}/rows` (dataset) | or per run: `GET /monitors/{id}/runs` → `GET /monitors/runs/{run_id}` |
 | Pause / resume | `PATCH /monitors/{id} {"enabled": false}` · `{"enabled": true, "fill_gap": true}` | `POST /monitors/{id}/run` runs it now |
 | Webhooks | `"webhook_ids": [...]` on `POST /runs`, `POST /monitors` (and `keep_updated.webhook_ids`, default the run's) | ids from the Platform's Webhooks page; results arrive as `agent_run_completed` / `agent_monitor_results_ready` |
@@ -33,7 +34,7 @@ Base URL `https://api.newscatcherapi.com/agent` (define it once as a constant an
 
 ## Request bodies
 - Events run: `{"query": "Bank M&A deals announced in the US since October 1, 2026", "mode": "fast", "max_rows": 50}`.
-  `mode`: fast (minutes) · standard (10–30 min, verified rows, cited briefing) · max. `max_rows`: 50, 100, 150 or 200.
+  `mode`: fast (minutes) · standard (10–30 min, verified rows, cited briefing) · max. `max_rows`: 50 or 100 (more is `too_many_rows`; continue the run for more).
 - Company run: `{"companies": {"items": [{"domain": "stripe.com"}], "save_as_list": true, "list_name": "Fintech"}, "query": "funding and acquisitions", "lookback_days": 30}`
   or `{"companies": {"list_id": "<uuid>"}, …}`. `query` blank = every story.
 - Keep it updated (monitor created when the run succeeds): `"keep_updated": {"schedule": {"every": "day", "at": "09:00", "tz": "America/New_York"}}`;
@@ -43,7 +44,7 @@ Base URL `https://api.newscatcherapi.com/agent` (define it once as a constant an
 ## Patterns
 - **Runs take minutes:** never block a web request on one. Store `run_id`, then poll from a worker every 15–30 s, or
   stream the SSE endpoint.
-- **No idempotency key on POST /runs or /monitors:** persist the id right after the POST; after a timeout or a 5xx,
+- **No idempotency key on POST /runs, /runs/{id}/continue or /monitors:** persist the id right after the POST; after a timeout or a 5xx,
   check `GET /runs?limit=` (or `GET /monitors`) before posting again, or you may pay for two runs. Company lists accept
   your own `list_id` (a UUID), so retrying that create is safe.
 - **Delivery sync:** store the monitor run ids you have processed and handle each once; company stories carry

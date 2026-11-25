@@ -262,7 +262,9 @@ async def test_never_retries_run_start_after_5xx_but_retries_searches(setup):
 def test_rounds_max_rows_up_to_an_allowed_size():
     ta = TypeAdapter(MaxRows)
     assert ta.validate_python(75) == 100
-    assert ta.validate_python(500) == 200
+    # A run asks for 100 rows at most (the plan's rows per run): more is capped, not refused.
+    assert ta.validate_python(150) == 100
+    assert ta.validate_python(500) == 100
     assert ta.validate_python(None) is None
 
 
@@ -407,9 +409,9 @@ async def test_explicit_null_is_accepted_for_optional_lists(setup):
 
 async def test_dry_run_starts_nothing_and_shows_cost_balance_and_tips(setup):
     h = setup(lambda c: {"json": {"credits_balance": 2500}} if "/subscription" in c.url else {"status": 500})
-    text, _ = await h.call("start_research", {"query": "news articles about tech layoffs", "mode": "standard", "max_rows": 150, "dry_run": True})
+    text, _ = await h.call("start_research", {"query": "news articles about tech layoffs", "mode": "standard", "max_rows": 100, "dry_run": True})
     assert all(c.method == "GET" for c in h.calls)
-    for s in ("nothing was started or charged", "Standard runs take 10–30 minutes", "at most 6,000 credits.",
+    for s in ("nothing was started or charged", "Standard runs take 10–30 minutes", "at most 4,500 credits.",
               "Balance: 2,500 credits (not enough", "No time window", "Describe the events, not the coverage"):
         assert s in text
     assert "$" not in text
@@ -618,3 +620,136 @@ async def test_search_with_no_match_says_so(setup):
     assert text == 'No monitors match "nothing".'
     text, _ = await h.call("get_company_list", {"search": "nothing"})
     assert text == 'No company lists match "nothing".'
+
+
+
+# ---------------------------------------------------------------- continuing a run (Agent API 1.19.2)
+
+
+def _events_run(rows: int, **extra):
+    """A succeeded events run detail with ``rows`` rows."""
+    return {"run_id": "r1", "kind": "events", "mode": "fast", "status": "succeeded", "columns": ["company", "url"],
+            "rows": [{"company": f"c{i}", "url": f"https://x/{i}"} for i in range(rows)], "continuable": True, **extra}
+
+
+async def test_continue_run_sends_the_new_total_and_points_to_both_runs(setup):
+    def responder(c):
+        if c.method == "POST":
+            return {"status": 202, "json": {"run_id": "r1", "continuation_id": "c1", "status": "queued", "rows": 50, "max_rows": 100}}
+        return {"json": _events_run(50)}
+
+    h = setup(responder)
+    text, err = await h.call("start_research", {"continue_run_id": "r1"})
+    assert not err
+    post = [c for c in h.calls if c.method == "POST"]
+    assert len(post) == 1 and post[0].url.endswith("/agent/runs/r1/continue") and post[0].body == {"max_rows": 100}
+    for s in ("continuation c1", "from 50 rows to up to 100", "at most 500 credits", "left out",
+              'get_research(run_id="c1"', 'get_research(run_id="r1") has every row'):
+        assert s in text
+    assert "$" not in text
+
+
+async def test_continue_run_is_never_retried_after_a_5xx(setup):
+    h = setup(lambda c: {"status": 503, "json": {"message": "Unavailable"}} if c.method == "POST" else {"json": _events_run(50)})
+    text, err = await h.call("start_research", {"continue_run_id": "r1", "add_rows": 30})
+    assert err and len([c for c in h.calls if c.method == "POST"]) == 1
+    assert "may have gone through" in text
+
+
+async def test_continue_dry_run_prices_only_the_extra_blocks(setup):
+    def responder(c):
+        if "/subscription" in c.url:
+            return {"json": {"credits_balance": 9000}}
+        return {"json": _events_run(50, mode="standard")}
+
+    h = setup(responder)
+    text, _ = await h.call("start_research", {"continue_run_id": "r1", "add_rows": 100, "dry_run": True})
+    assert all(c.method == "GET" for c in h.calls)
+    for s in ("nothing was started or charged", "50 rows now, up to 150 after (+100)", "can be continued now",
+              "at most 3,000 credits", "Balance: 9,000 credits", "Standard runs take"):
+        assert s in text
+    # 30 rows + 20 stay inside the 50 rows a run includes: nothing to pay.
+    h = setup(lambda c: {"json": _events_run(30, continuable=False)} if "/runs/" in c.url else {"json": {}})
+    text, _ = await h.call("start_research", {"continue_run_id": "r1", "add_rows": 20, "dry_run": True})
+    assert "Cost: free" in text and "cannot be continued: it found fewer rows" in text
+
+
+async def test_continue_run_limits_and_wrong_runs(setup):
+    h = setup(lambda c: {"json": _events_run(50)})
+    _, err = await h.call("start_research", {"continue_run_id": "r1", "query": "more layoffs"})
+    assert err and not h.calls
+    # One continuation adds up to the plan's rows per run (100).
+    _, err = await h.call("start_research", {"continue_run_id": "r1", "add_rows": 101})
+    assert err and not h.calls
+    # Capped at 1,000 rows in all.
+    h = setup(lambda c: {"status": 202, "json": {"continuation_id": "c1", "status": "queued"}} if c.method == "POST" else {"json": _events_run(950)})
+    await h.call("start_research", {"continue_run_id": "r1", "add_rows": 100})
+    assert h.calls[-1].body == {"max_rows": 1000}
+    h = setup(lambda c: {"status": 202, "json": {"continuation_id": "c1", "status": "queued"}} if c.method == "POST" else {"json": _events_run(990)})
+    await h.call("start_research", {"continue_run_id": "r1", "add_rows": 100})
+    assert h.calls[-1].body == {"max_rows": 1000}
+    h = setup(lambda c: {"json": _events_run(1000)})
+    text, err = await h.call("start_research", {"continue_run_id": "r1"})
+    assert err and "most a run can have" in text and all(c.method == "GET" for c in h.calls)
+    h = setup(lambda c: {"json": _events_run(20, run_id="c1", continue_of="r1", continuable=None)})
+    text, err = await h.call("start_research", {"continue_run_id": "c1"})
+    assert err and 'continue_run_id="r1"' in text and all(c.method == "GET" for c in h.calls)
+    h = setup(lambda c: {"json": {"run_id": "r2", "kind": "companies", "status": "succeeded", "rows": []}})
+    text, err = await h.call("start_research", {"continue_run_id": "r2"})
+    assert err and "Only events runs" in text
+
+
+async def test_continue_refusals_get_their_own_advice(setup):
+    def responder(c):
+        if c.method == "POST":
+            return {"status": 409, "json": {"code": "run_not_continuable", "message": "This run found 10 of the 50 rows it asked for."}}
+        return {"json": _events_run(10, continuable=False)}
+
+    text, err = await setup(responder).call("start_research", {"continue_run_id": "r1"})
+    assert err and "found 10 of the 50" in text and "Nothing was started or charged" in text and "still going" not in text
+    h = setup(lambda c: {"status": 409, "json": {"code": "run_busy", "message": "Already being continued."}}
+              if c.method == "POST" else {"json": _events_run(50)})
+    text, _ = await h.call("start_research", {"continue_run_id": "r1"})
+    assert "already being continued" in text and "still going" not in text
+
+
+async def test_get_research_shows_continuations_and_the_more_rows_hint(setup):
+    run = _events_run(
+        60,
+        continuations=[{"continuation_id": "c0", "status": "succeeded", "max_rows": 100, "rows_added": 10, "found": 50,
+                        "duplicates": {"url": 30, "key": 5, "same_event": 5}}],
+    )
+    text, _ = await setup(lambda c: {"json": run}).call("get_research", {"run_id": "r1", "wait_seconds": 0})
+    assert "Continued 1 time: succeeded, +10 rows (40 it found were already in the run)." in text
+    assert 'start_research(continue_run_id="r1", add_rows=50)' in text
+    busy = _events_run(60, continuable=False, continuation={"continuation_id": "c2", "max_rows": 110, "rows_before": 60})
+    text, _ = await setup(lambda c: {"json": busy}).call("get_research", {"run_id": "r1", "wait_seconds": 0})
+    assert 'Being continued: continuation c2, up to 110 rows in all. get_research(run_id="c2")' in text
+    assert "continue_run_id" not in text
+    # Not continuable (found fewer than it asked for): no hint.
+    text, _ = await setup(lambda c: {"json": _events_run(10, continuable=False)}).call("get_research", {"run_id": "r1", "wait_seconds": 0})
+    assert "continue_run_id" not in text and "Continued" not in text
+
+
+async def test_get_research_on_a_continuation_points_to_its_run(setup):
+    cont = _events_run(50, run_id="c1", continue_of="r1", continuable=None)
+    text, _ = await setup(lambda c: {"json": cont}).call("get_research", {"run_id": "c1", "wait_seconds": 0})
+    assert 'A continuation of run r1: once it succeeds, its new rows are in get_research(run_id="r1")' in text
+    running = {**cont, "status": "running", "rows": []}
+    text, _ = await setup(lambda c: {"json": running}).call("get_research", {"run_id": "c1", "wait_seconds": 0})
+    assert "A continuation: it adds rows to run r1." in text
+
+
+async def test_monitor_listing_marks_the_free_monitor(setup):
+    ms = [{"monitor_id": "m1", "kind": "companies", "name": "A", "companies": [{"domain": "a.com"}], "enabled": True, "free": True},
+          {"monitor_id": "m2", "kind": "companies", "name": "B", "companies": [{"domain": "b.com"}], "enabled": True, "free": False}]
+    text, _ = await setup(lambda c: {"json": {"monitors": ms}}).call("get_monitor", {})
+    first, second = text.splitlines()[:2]
+    assert "free (the account's free monitor: its runs cost nothing)" in first and "free" not in second
+
+
+async def test_add_rows_schema_is_bounded():
+    tools = {t.name: t for t in await list_tools(build_server(load_config()))}
+    p = tools["start_research"].input_schema["properties"]
+    assert p["add_rows"]["maximum"] == 100 and p["add_rows"]["minimum"] == 1 and p["add_rows"]["default"] == 50
+    assert p["continue_run_id"]["anyOf"][0]["type"] == "string"
