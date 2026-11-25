@@ -19,6 +19,11 @@ Needs Agent API 1.19.2.
 - Monitor listings mark the account's free monitor (the API's `free`).
 
 ### Fixed
+- A slow upstream no longer leaves a tool call without an answer. Retries of reads and searches (after 429, 502,
+  503, 504 or a network error) are made only while the call's time budget (`NEWSCATCHER_MAX_CALL_SECONDS`) leaves room
+  for them, and each attempt's timeout is capped at the time left (at least 5 s). Before, three slow 5xx answers
+  could take the call past the platform's function limit, which ended it with no answer at all; now the error comes
+  back, with its Correlation-ID.
 - `get_research(format="json")` leaves out `cost_usd` from a run's continuations: the API's processing cost, not
   a price, and prices are given in credits only.
 
