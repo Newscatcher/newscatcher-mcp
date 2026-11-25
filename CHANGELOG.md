@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+- `.github/workflows/docs.yml`: after every push to `main`, asks the public docs repository
+  (`Newscatcher/docs`) to update the MCP server's pages, with a `repository_dispatch`
+  (`mcp-main-push`, the commits before and after the push). The docs repository opens a docs PR
+  for review. Needs the repository secret `DOCS_DISPATCH_TOKEN`; without it the job skips with a
+  notice.
+
 ## [0.4.0] - 2026-11-25
 
 Needs Agent API 1.19.2.
